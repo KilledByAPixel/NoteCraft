@@ -97,6 +97,20 @@ input
     color:#fff7;
     pointer-events:none;
 }
+.loadingMessage
+{
+    font-size:4em;
+    background:#000;
+    z-index:100;
+    position:fixed;
+    left:0;
+    top:300;
+    width:100%;
+    padding:20px;
+    text-align:center;
+    outline:9px solid #222;
+    display:none;
+}
 </style><body>
 <script src=jsonCrush.js></script>
 <script>'use strict'
@@ -115,6 +129,9 @@ x rework save format
 - instrument select
 - render zzfxm music track
 - puzzle mode
+
+
+- fix share
 
 puzzle object
 - disable some cell types
@@ -1348,6 +1365,20 @@ function Update(animationTime = 0)
 {
     requestAnimationFrame(Update);
 
+    if (!--wantsToShare)
+    {
+        loadingMessageDisplay.style.display = 'none';
+        RemoveFocus();
+
+        const crushed = JSONCrush(GetSaveString());
+        const url = new URL(window.location.href);
+        //url.searchParams.append('c', crushed);
+        url.search = '&c=' + crushed;
+        
+        try { navigator.clipboard.writeText(url.toString()); alert('👍 Link coppied!') }
+        catch (e) { alert('👾 I am Error.'); }
+    }
+
     if (!hasFocus && document.hasFocus())
     {
         // todo: prevent stuck input
@@ -1801,6 +1832,8 @@ function BuildHTML()
     e.onchange = e=> Save(e.target.blur());
     e.type = 'range';
 
+    loadingMessageDisplay = CreateElement('div', body, 'loadingMessage');
+
     cellObjects = [];
     UpdateUI();
     SetEditObject(1, 0);
@@ -1879,15 +1912,11 @@ function ButtonClear()
 
 function ButtonShare()
 {
-    RemoveFocus();
-
-    const crushed = JSONCrush(GetSaveString());
-    const url = new URL(window.location.href);
-    //url.searchParams.append('c', crushed);
-    url.search = '&c=' + crushed;
-    
-    try { navigator.clipboard.writeText(url.toString()); alert('👍 Link coppied!') }
-    catch (e) { alert('👾 I am Error.'); }
+    if (!wantsToShare) // prevent double clicking button
+        return;
+    loadingMessageDisplay.style.display = 'block';
+    loadingMessageDisplay.innerHTML = 'Compressing URL...';
+    wantsToShare = 2;
 }
 
 function ButtonExport()
@@ -2183,6 +2212,8 @@ let screenMinX, screenMinY, screenMaxX, screenMaxY;
 let unpowerSet;
 let canvasHasMouse;
 let puzzleMode = 0, puzzleSaveData = [];
+let wantsToShare = 0;
+let loadingMessageDisplay;
 
 let lastEditX, lastEditY;
 
