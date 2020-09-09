@@ -1,0 +1,2237 @@
+<meta charset="utf-8">
+<style>
+*
+{
+    font-family:monospace;
+    font-size:20
+}
+body
+{
+    margin:0;
+    overflow:hidden;
+    user-select:none;
+    white-space:nowrap;
+    color:#fff;
+}
+button
+{
+    width:90;
+    height:30;
+    background:#ccc;
+    color:#000;
+    border:2px solid #000;
+    border-radius:6px;
+}
+button:active { background:#fff; }
+button:hover  { background:#ffa; }
+input
+{
+    background:#ccc;
+    width:80;
+    height:25;
+    margin:4;
+    text-align:center;
+    border-radius:6px;
+}
+.toolbar
+{
+    position:absolute;
+    background:linear-gradient(#444,#111);
+    border-bottom:4px solid #555;
+    border-right:4px solid #555;
+    border-bottom-right-radius:30px;
+}
+.toolbarTop
+{
+    display:flex;
+    align-items:center;
+}
+.toolbarEditControls
+{
+    display:flex;
+    margin-left:8;
+}
+.playControl
+{
+    display:inline-block;
+    width:50;
+    height:50;
+    font-size:32;
+    margin:4;
+    border-radius:9px;
+    text-align:center;
+}
+.songTimeDisplay
+{
+    text-align:center;
+    white-space:pre;
+}
+.beatDisplay
+{
+    width:60;
+    height:60;
+    background:#0ff;
+    border:4px solid #000;
+    border-radius:50%;
+    margin:0;
+    overflow:hidden;
+    margin-left:6;
+    margin-right:6;
+}
+.beatDisplayMarker
+{
+    width:10;
+    height:10;
+    border:3px solid #000;
+    background:#222;
+    border-radius:50%;
+    margin:22;
+    margin-top:2;
+}
+.watermark
+{
+    position:absolute;
+    bottom:8;
+    right:8;
+    font-size:16;
+    color:#fff7;
+    pointer-events:none;
+}
+</style><body>
+<script src=jsonCrush.js></script>
+<script>'use strict'
+
+let debug = 1;
+
+/*
+
+Selection Controls
+- R/E = Rotate
+- Q = Mirror
+- WASD = Move
+
+big todo
+x rework save format
+- instrument select
+- render zzfxm music track
+- puzzle mode
+
+puzzle object
+- disable some cell types
+- zzfxm music track
+- default cells level
+puzzle mode
+- disable bpm and key, and name change
+- prevent copy into puzzle
+- if load, exit puzzle mode
+- clear loads default cells instead of clear
+- smaller levels
+- prevent pasting in or loading (clear level mode)
+- disable some icons?
+
+menu button drop down
+- 0 intro, fur elise? bach  
+- 1 Twinkle Twinkle - notes, movers, key control
+- 2 Mario Part 1 - blocks and walls (mostly filled out, missing some stuff)
+- 3 Tetris - rotators - missing rotators except for first one and other stuff
+- 4 Metroid - attenuate control - missing some attenuate control
+- 5 Bubble Bobble = power lines
+- 6 Zelda = kill blocks
+- 7 Row Your Boat - copiers = song partially set up, make a row
+- 8 Mario part 2 - full smb theme
+- 9 Automata - Fill up the level, start empty
+- 10 Automata Zoo - Examples of Automata
+- more songs? classical?
+- Smooth Criminal
+- Fur elise
+- Free Edit Small 25x25
+- Free Edit Medium level 50x50
+- Free Edit Large level 100x100
+
+save object
+- save data
+  - puzzle mode (0 is free edit)
+  - volume
+  - for each level
+    - has won?
+    - least cells used
+- one key for cells of each saved puzzle / free mode
+
+instruments
+- include in level info
+- drop down to replace with zzfx strings
+- grayed out for puzzles
+
+todo
+x improve pasting, allow moving after paste and rotating
+x mirror and rotate buttons 
+- shortcut keys, add to titles, need step shortcut
+- view song sequence
+
+- export to zzfxm
+- menu
+- global save object
+- puzzle object
+- puzzles
+- select / place sounds
+- show warning while sharing for slow crush
+- fill = f
+- attenuate gain and pan
+- clean up debug stuff
+- ctrl + s save
+- ctrol + l load
+
+stretch ideas
+- opt, dont render off screen tiles
+- touch support, how to do stuff?
+- rework stereo
+- analuzer
+- visualiser
+- midi in/out
+- pre cache sounds
+- live edit
+- round to scale option
+- save camera pos
+- allow placing notes directly
+- different color wire
+- something to slow down notes
+- text cell type - throw a prompt when placed, show text
+- debug block, pause if powered
+- transition beat circle color
+- erase if both left and right mouse down
+
+- set background color picker
+
+*/
+
+// ==ClosureCompiler==
+// @compilation_level ADVANCED_OPTIMIZATIONS
+// @language_out ECMASCRIPT_2019
+// @output_file_name MusicAutomata.min.js
+// ==/ClosureCompiler==
+
+///////////////////////////////////////////////////////////////////////////////
+// Helper Functions 
+
+function Clamp   (a, max=1, min=0)       { return a < min ? min : a > max ? max : a; }
+function Percent (v, a, b)               { return b-a ? Clamp((v-a)/(b-a)) : 0; }
+function Lerp    (p, a, b)               { return a + Clamp(p) * (b-a); }
+function HSLA    (h=0, s=0, l=0, a=1)    { return `hsla(${h*360},${s*100}%,${l*100}%,${a})`; }
+
+function NoteFrequency(offset, root=440) { return root * 2 ** (offset / 12); }
+function NoteName(n=0) { n+=keyOffset; return "CCDDEFFGGAAB"[n%12|0]  + ('02579'.indexOf(n%12-1) < 0 ? '' : '#') + (n < 12 ? '' : n/12|0); }
+function AttenuationName(a=0) { return (10-a || '') + '0%'; }
+
+function GetDirectionXY(direction)
+{
+    const side = direction & 2 ? 1 : -1;
+    return [direction & 1 ? -side : 0, direction & 1 ? 0 : side];
+}
+ 
+///////////////////////////////////////////////////////////////////////////////
+// Sound Object
+ 
+class Sound
+{
+    Play(instrument, key, gain, pan)
+    {
+        if (this.source && this.instrument == instrument && this.key == key)
+        {
+            // only change gain if same instrument & note
+            this.gain.gain.value = gain;
+            return;
+        }
+
+        // stop old sound
+        this.Stop();
+
+        // cache sound sample
+        let soundSamples = soundCache[[this.instrument = instrument, this.key = key]];
+        if (!soundSamples)
+        {
+            const instrumentParameters = [...instruments[instrument]];
+            instrumentParameters[2] = NoteFrequency(key + keyOffset, instrumentParameters[2]); 
+            soundSamples = soundCache[[instrument, key]] = zzfxG(...instrumentParameters);
+        }
+        
+        // play sound and set gain and pan
+        (this.source = zzfxS(...soundSamples))
+            .connect(this.gain = zzfxX.createGain())
+            .connect(this.pan = zzfxX.createStereoPanner())
+            .connect(volumeGain);
+        this.SetGain(gain);
+        this.SetPan(pan);
+        this.source.start();
+    }
+
+    SetGain(gain) { this.source && (this.gain.gain.value = gain); }
+    SetPan(pan)   { this.source && (this.pan.pan.value = pan); }
+
+    Stop(delaySeconds = .02)
+    {
+        const source = this.source;
+        if (!source)
+            return;
+
+        // unset and ramp off sound
+        this.source = 0;
+        this.gain.gain.linearRampToValueAtTime(this.gain.gain.value, zzfxX.currentTime);
+        this.gain.gain.linearRampToValueAtTime(0, zzfxX.currentTime + delaySeconds);
+        setTimeout(e=>source.stop(), delaySeconds*1e3);
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Cell Object
+
+const CELL_TYPE_BLOCK      = 0;
+const CELL_TYPE_POWER      = 1;
+const CELL_TYPE_NOTE       = 2;
+const CELL_TYPE_CONTROL    = 3;
+const CELL_TYPE_KILL       = 4;
+const CELL_TYPE_COPY       = 5;
+const CELL_TYPE_ROTATE     = 6;
+const CELL_TYPE_POWER_LINE = 7;
+const CELL_TYPE_COUNT      = 8;
+
+const cellTypeInfo = 
+[
+//   name        data  power
+    ['Block',     4,    0],
+    ['Power',     5,    1],
+    ['Play Note', 4,    1],
+    ['Control',   4,    0],
+    ['Remove',    1,    1],
+    ['Copy',      5,    1],
+    ['Rotate',    2,    1],
+    ['Power Line',1,    1]
+];
+
+const CELL_CONTROL_SEMI_TONE    = 0;
+const CELL_CONTROL_ATTENUATE_10 = 1;
+const CELL_CONTROL_OCTAVE       = 2;
+const CELL_CONTROL_ATTENUATE_50 = 3;
+const CELL_MAX_DATA_COUNT       = 5;
+
+function CellDataCount(type)
+{
+    return cellTypeInfo[type][1];
+}
+function UsesPower(type)
+{
+    return cellTypeInfo[type][2];
+}
+
+class Cell
+{
+    constructor(x, y, type = 0, data = 0)
+    {
+        this.SetXY(x, y);
+        this.type = type; 
+        this.data = data;
+        this.angle = 0;
+        this.sound = new Sound();
+        this.updateCount = 0;
+        this.Reset();
+    }
+
+    Reset()
+    {
+        this.powered = this.type == CELL_TYPE_POWER;
+        this.key = this.attenuation = 0;
+        this.spawnFrame = this.notePowerFrame = this.moveFrame = -1;
+    }
+
+    SetXY(x, y)
+    {
+        this.lastX = this.x = x;
+        this.lastY = this.y = y;
+    }
+    
+    Destroy()
+    {
+        this.sound.Stop();
+        SetCellObject(this.x, this.y);
+    }
+    
+    PlaySound(force)
+    {
+        if (this.type != CELL_TYPE_NOTE && !force)
+            return;
+
+        if (++frameSoundCount > 8) // limit max sounds per frame of music
+            return;
+
+        const gain = 1 - this.attenuation/10;
+        const pan = this.x/(cellsWidth-1)*2-1;
+        this.sound.Play(this.type == CELL_TYPE_NOTE ? this.data : 0, this.key, gain, pan);
+        auditionMode && this.sound.Stop(.5);
+    }
+
+    Audition()
+    {
+        // if control, play attached notes or sound instrument 1 if no attached
+        // else play any powred notes (reset and se power)
+
+        frameSoundCount = 0;
+        this.powered = 0;
+        cellObjects.map(c=>c&&c.UpdatePowerPre());
+        this.SetPowered();
+
+        auditionMode = 1;
+        this.UpdateControl();
+        auditionMode = 0;
+        cellObjects.map(c=>c&&c.UpdateControl());
+
+        auditionMode = 1;
+        cellObjects.map(c=>c&&c.UpdateNotes());
+
+        // force play if no sound
+        this.type == CELL_TYPE_CONTROL && !frameSoundCount && this.PlaySound(1);
+
+        auditionMode = 0;
+        InitCells();
+    }
+    
+    BuildUpdateList()
+    {
+        this.lastX = this.x;
+        this.lastY = this.y;
+        ++this.updateCount;
+
+        this.moveDirectionList = [];
+        if (this.type == CELL_TYPE_POWER && this.powered && this.data < 4) // powered mover
+            updateListCells.push(this);
+        else if (this.type == CELL_TYPE_COPY) // copier
+        {
+            this.spawnActive = 0;
+            if (!this.powered)
+                this.preventSpawn = 0;
+            else
+            {
+                if (!this.preventSpawn)
+                {
+                    this.preventSpawn = 1;
+                    this.spawnActive = 1;
+                }
+                updateListCells.push(this);
+            }
+        }
+    }
+
+    AddToMoveList(direction)
+    {
+        let i = this.moveDirectionList.indexOf(direction);
+        i < 0 && this.moveDirectionList.push(direction);
+    }   
+
+    MoveTestRecurse(direction, isSelf)
+    {
+        if (this.moveTestID == moveTestID)
+            return; // blocked by reursion, movement looped on self
+        this.moveTestID = moveTestID;
+
+        if (this.type == CELL_TYPE_BLOCK && (this.data > 2 || this.data == ((direction & 1) + 1)))
+            return; // soild wall or one way slider
+
+        if (this.type == CELL_TYPE_COPY && this.preventSpawn && !isSelf)
+            return; // can't push copier that is spawning
+
+        if (this.powered && this.type == CELL_TYPE_ROTATE)
+            return; // can't push powered rotator
+
+        if (this.powered && this.type == CELL_TYPE_KILL)
+            return true; // powered kill blocks can always be moved into
+          
+        if (this.powered && this.type == CELL_TYPE_POWER && this.data < 4)
+        {
+            // change direction to move direction
+            direction = this.data;
+        }
+
+        // try to move
+        let directionXY = GetDirectionXY(direction);
+        let x = this.x + directionXY[0];
+        let y = this.y + directionXY[1];
+        if (!IsValidCell(x,y))
+            return;
+
+        // get object at target pos
+        let target = GetCell(x, y);
+        if (target && target.type == CELL_TYPE_ROTATE && target.powered)
+        {
+            // rotate direction against powered rotators
+            direction = (direction + (target.data ? 3 : 1))%4;
+            directionXY = GetDirectionXY(direction);
+            x = this.x + directionXY[0];
+            y = this.y + directionXY[1];
+            if (!IsValidCell(x,y)) 
+                return;
+            
+            // get new target
+            target = GetCell(x, y);
+        }
+
+        if (!target || target.MoveTestRecurse(direction))
+        {
+            // target could move, add to list
+            this.AddToMoveList(direction);
+            return true;
+        }
+    }
+
+    MoveTest(direction)
+    {
+        moveTestID++; // prevent infinte recursion
+        return this.MoveTestRecurse(direction, 1);
+    }
+
+    UpdateTestCopy()
+    {
+        const TestCopy = (direction)=>
+        {
+            let copyDirection = (direction + 2)%4;
+            const copyDirectionXY = GetDirectionXY(copyDirection);
+            const x = this.x + copyDirectionXY[0];
+            const y = this.y + copyDirectionXY[1];
+
+            const copyObject = GetCell(x, y);
+            if (!copyObject)
+                return;
+
+            if (copyObject.type == CELL_TYPE_KILL && copyObject.powered)
+                return; // can't copy powered kill block
+
+            if (copyObject.type == CELL_TYPE_BLOCK && copyObject.data == 3)
+                return; // cant copy solid wall
+
+            copyObject.copyFrame = frame;
+            unpowerSet.add(copyObject);
+            if (!this.MoveTest(direction))
+                return;
+
+            // add to copy list
+            this.copyList[copyDirection] = copyObject;
+        }
+
+        if (this.type != CELL_TYPE_COPY)
+            return;
+
+        // doesn't matter it has power (may be lose power from another coppier), but already set to spawn
+        this.copyList = [];
+
+        // dont upadate if prevent spawning unless this is the spawn frame
+        if (this.preventSpawn && !this.spawnActive)
+            return;
+
+        if (this.data < 4)
+            TestCopy(this.data); // single direction copy
+        else
+            for(let i=4;i--;) TestCopy(i);  // multi direction copy
+    }
+
+    UpdateTestPowerMove()
+    {
+        if (this.type != CELL_TYPE_POWER || !this.powered)
+            return;
+
+        // if it wasnt powered down by a copier
+        this.MoveTest(this.data);
+    }
+
+    IncrementMoveTarget(direction)
+    {
+        // try to move
+        let directionXY = direction >= 0 ? GetDirectionXY(direction) : [0,0];
+        let x = this.x + directionXY[0];
+        let y = this.y + directionXY[1];
+        if (!IsValidCell(x,y))
+            return;
+
+        const target = GetCell(x, y);
+        if (target && target.type == CELL_TYPE_KILL)
+            return;
+
+        const v = cellMoveTargets[x+cellsWidth*y];
+        cellMoveTargets[x+cellsWidth*y] = v ? v + 1 : 1;
+    }
+
+    // for all objects
+    UpdateCollisionDetect()
+    {
+        if (this.type == CELL_TYPE_COPY && this.spawnActive)
+        {
+            // increment current pos and all move directions in move array
+            this.moveDirectionList.map(direction=>this.IncrementMoveTarget(direction));
+            this.IncrementMoveTarget(-1);
+            return;
+        }
+
+        if (this.moveDirectionList.length == 1)
+        {
+            this.IncrementMoveTarget(this.moveDirectionList[0])
+            return;
+        }
+
+        // no move direction, or more then 1
+        this.IncrementMoveTarget(-1);
+    }
+
+    // powered movers
+    Move()
+    {
+        if (this.moveFrame == frame)
+            return true;
+        this.moveFrame = frame; // prevent another move
+
+        if (this.type == CELL_TYPE_KILL && this.powered)
+            return true; // kill blocks don't really move, they just eat everything
+
+        if (!this.moveDirectionList || this.moveDirectionList.length != 1)
+            return false; // collision: multiple move directions or no move
+
+        let directionXY = GetDirectionXY(this.moveDirectionList[0]);
+        let x = this.x + directionXY[0];
+        let y = this.y + directionXY[1];
+
+        if (cellMoveTargets[x +cellsWidth*y] > 1)
+            return false; // collision, move target is used
+
+        // get new target
+        let target = GetCell(x, y);
+        if (target && target.powered && target.type == CELL_TYPE_KILL)
+        {
+            // destroy if moved into powered kill block
+            this.Destroy();
+            return true;
+        }
+
+        if (!target || target.Move())
+        {
+            // apply move
+            SetCellObject(this.x, this.y);
+            cellObjects[x + cellsWidth*y] = this;
+            this.x = x;
+            this.y = y;
+
+            // update pan
+            const pan = this.x/(cellsWidth-1)*2-1;
+            this.sound.SetPan(pan);
+            return true;
+        }
+    }
+
+    // actual movement and collision detect part 2, for all objects in update list
+    UpdateMovement()
+    {
+        if (this.type == CELL_TYPE_POWER && this.powered)
+        {
+            if (!this.Move())
+                this.powered = 0;
+        }
+        else if (this.type == CELL_TYPE_COPY)
+        {
+            this.moveDirectionList.map(direction=>
+            {
+                let copyDirection = (direction + 2)%4;
+                let copyObject = this.copyList[copyDirection];
+                if (copyObject)
+                {
+                    let directionXY = GetDirectionXY(direction);
+                    let x = this.x + directionXY[0];
+                    let y = this.y + directionXY[1];
+                    
+                    // get new target
+                    let target = GetCell(x, y);
+                    if (cellMoveTargets[x + cellsWidth*y] == 1 && (!target || target.Move()))
+                        this.CopyObject(direction, copyObject);
+                }
+            });
+        }
+    }
+    
+    CopyObject(spawnDirection, copyObject)
+    {
+        const spawnDirectionXY = GetDirectionXY(spawnDirection);
+        const x = this.x + spawnDirectionXY[0];
+        const y = this.y + spawnDirectionXY[1];
+
+        if (GetCell(x, y)) // spawn blocked
+            return;
+
+        const newCell = new Cell(...copyObject.GetInfoArray());
+        SetCellObject(x, y, newCell);
+        newCell.spawnFrame = frame;
+        newCell.lastX = this.x;
+        newCell.lastY = this.y;
+    }
+
+    UpdatePowerPre()
+    {
+        this.wasPowered = this.powered;
+        this.powered = 0;
+        this.updatedControl = 0;
+    }
+
+    UpdatePower()
+    {
+        // update powere even if it was powered down this frame
+        this.type == CELL_TYPE_POWER && this.wasPowered && this.SetPowered();
+    }
+
+    UpdateControl()
+    {
+        // update key and attenuation
+        if (this.updatedControl || this.type != CELL_TYPE_CONTROL)
+            return;
+
+        // use fill routine to get connections
+        let cellUpdated = [], updatedCells = [], value = 0, foundSmall = 0,
+        UpdateControlCells = (x, y, wasControl = 1)=>
+        {
+            const cell = GetCell(x, y);
+            if (!cell || cellUpdated[x + cellsWidth * y])
+                return;
+
+            const isControl = cell.type == CELL_TYPE_CONTROL && cell.data%2 == this.data%2;
+            if (!isControl && cell.type != CELL_TYPE_NOTE)
+                return;
+
+            if (!wasControl && !isControl)
+                return;
+
+            if (cell.type == CELL_TYPE_NOTE || isControl)
+            {
+                cell.updatedControl = 1;
+                cellUpdated[x + cellsWidth * y] = 1;
+                updatedCells.push(cell);
+                if (isControl)
+                {
+                    if (!foundSmall && cell.data < 2) // skip the first small control
+                        foundSmall = 1;
+                    else
+                        value += cell.data < 2 ? 1 : cell.data - 2 ? 5 : 12;
+                }
+
+                if (cell.type == CELL_TYPE_NOTE && auditionMode)
+                    cell.PlaySound();
+
+                UpdateControlCells(x+1, y, isControl);
+                UpdateControlCells(x-1, y, isControl);
+                UpdateControlCells(x, y-1, isControl);
+                UpdateControlCells(x, y+1, isControl);
+            }
+        }
+
+        UpdateControlCells(this.x, this.y);
+        updatedCells.map( cell=> this.data % 2 ? cell.attenuation = Math.min(value, 10) : cell.key = value );
+    }
+
+    UpdateNotes()
+    {
+        if (this.type != CELL_TYPE_NOTE)
+            return;
+        
+        if (!this.powered)
+        {
+            this.sound.Stop();
+            return;
+        }
+
+        // flash when note plays
+        let UpdateControlCells = (x, y, wasControl = 1)=>
+        {
+            const cell = GetCell(x, y);
+            if (!cell || cell.notePowerFrame == frame)
+                return;
+
+            const isControl = cell.type == CELL_TYPE_CONTROL && cell.data%2 == this.data%2;
+            if (!isControl && cell.type != CELL_TYPE_NOTE)
+                return;
+
+            if (!wasControl && !isControl)
+                return;
+
+            if (cell.type == CELL_TYPE_NOTE || isControl)
+            {
+                cell.notePowerFrame = frame;
+
+                UpdateControlCells(x+1, y, isControl);
+                UpdateControlCells(x-1, y, isControl);
+                UpdateControlCells(x, y-1, isControl);
+                UpdateControlCells(x, y+1, isControl);
+            }
+        }
+
+        UpdateControlCells(this.x, this.y, 1);
+
+        if (IsPlaying() || auditionMode)
+            this.PlaySound();
+    }
+    
+    SetPowered()
+    {
+        if (this.type == CELL_TYPE_BLOCK || this.type == CELL_TYPE_CONTROL)
+            return; // cant be powered
+
+        if (this.type == CELL_TYPE_COPY && this.spawnActive)
+            return; // cant power copiers while spawning
+
+        if (this.powered)
+            return; // already powered
+        this.powered = 1;
+
+        if (this.type != CELL_TYPE_POWER&& this.type != CELL_TYPE_POWER_LINE && !(this.type == CELL_TYPE_ROTATE && IsPlaying()))
+            return; // no need to update more
+
+        // transfer power or rotate
+        for(let i = 4; i--;)
+        {
+            const d = GetDirectionXY(i);
+            const cell = GetCell(this.x + d[0], this.y +d[1]);
+            cell && (this.type == CELL_TYPE_ROTATE ? frame && cell.Rotate(this.data ? -1 : 1) : cell.SetPowered());
+        }
+    }
+    
+    Render(mode)
+    {
+        if (mode && (this.x < screenMinX | this.y < screenMinY | this.x > screenMaxX | this.y > screenMaxY))
+            return; // cull offscreen objects
+
+        if (mode == 1 && this.updateCount || mode == 3 && !this.updateCount) // new objects
+            return;
+            
+        const iconRender = !mode;
+        const percent = iconRender ? 1 : stepPercent;
+        const x = Lerp(percent, this.lastX, this.x);
+        const y = Lerp(percent, this.lastY, this.y);
+        let set = this.powered;
+        if (this.type == CELL_TYPE_COPY && this.preventSpawn ||             // active copier
+                this.type == CELL_TYPE_POWER && this.copyFrame == frame)    // object lost power due to active copier
+            set = 2;
+
+        if (this.type == CELL_TYPE_ROTATE)
+        {
+            const turnSpeed = set ? 4 : 1;
+            this.angle += turnSpeed*(this.data ? 1 : -1) * deltaTime * bpm * bpmToStepsPerSecond/8;
+        }
+        else
+            this.angle = 0;
+        const scale = this.type == CELL_TYPE_KILL && set ? Lerp(.5+Math.cos(2*Math.PI*percent)/2, .8, 1) : 1;
+
+        // draw rotated icon
+        context.save();
+
+        if (this.spawnFrame == frame)
+            context.globalAlpha = percent;
+
+        context.scale(cellSize, cellSize);
+        context.translate((x+.5), (y+.5));
+        context.scale(scale, scale);
+        context.rotate(Math.PI * this.angle);
+        context.drawImage(tilesCanvas, 2*(this.data+CELL_MAX_DATA_COUNT*set)*cellSize, 2*this.type*cellSize, 
+            cellSize, cellSize, -1/2, -1/2, 1, 1);
+        context.restore();
+
+        const lightWeightMode1 = !iconRender && renderScale < 1;
+        const lightWeightMode2 = !iconRender && renderScale <= .5;
+        const lightWeightMode3 = !iconRender && renderScale <= .25;
+        
+        // draw extra info
+        context.textAlign = 'center';
+        context.textBaseline = 'middle';
+        if (this.type == CELL_TYPE_POWER_LINE)
+        {
+            const color = set ? '#fff' : '#000';
+            if (!iconRender && !lightWeightMode1)
+            {
+                // show connections
+                const leftCell  = GetCell(this.x-1, this.y);
+                const rightCell = GetCell(this.x+1, this.y);
+                const upCell    = GetCell(this.x, this.y-1);
+                const downCell  = GetCell(this.x, this.y+1);
+                leftCell  && UsesPower(leftCell.type) && FillRect(x, y+.45, .5, .1, color);
+                rightCell && UsesPower(rightCell.type) && FillRect(x+.5, y+.45, .5, .1, color);
+                upCell    && UsesPower(upCell.type) && FillRect(x+.45, y, .1, .5, color);
+                downCell  && UsesPower(downCell.type) && FillRect(x+.45, y+.5, .1, .5, color);
+            }
+            FillCircle(x+.5, y+.5, .15, color);
+        }
+        if (this.type == CELL_TYPE_NOTE)
+        {
+            if (!iconRender && !lightWeightMode1)
+            {
+                // show connections
+                const leftCell = GetCell(this.x-1, this.y);
+                const upCell  = GetCell(this.x, this.y-1);
+                const w = .08;
+                if (leftCell && leftCell.type == CELL_TYPE_CONTROL)
+                    FillRect(x-w, y+.2, 2*w, .6, '#fff');
+                if (upCell && upCell.type == CELL_TYPE_CONTROL)
+                    FillRect(x+.2, y-w, .6, 2*w, '#fff');
+            }
+
+            context.fillStyle = '#fff';
+            context.strokeStyle = '#000';
+            context.lineWidth = 3;
+
+            if (iconRender || !lightWeightMode3)
+            {
+                if (this.attenuation)
+                {
+                    context.font = '900 ' + cellSize*.4 + 'px arial';
+                    const noteName = NoteName(this.key);
+                    lightWeightMode2 || context.strokeText(noteName, (x+.5)*cellSize, (y+.34)*cellSize, cellSize*.8);
+                    context.fillText(noteName, (x+.5)*cellSize, (y+.34)*cellSize, cellSize*.8);
+
+                    const attenuationName = AttenuationName(this.attenuation);
+                    lightWeightMode2 || context.strokeText(attenuationName, (x+.5)*cellSize, (y+.75)*cellSize, cellSize*.8);
+                    context.fillText(attenuationName, (x+.5)*cellSize, (y+.75)*cellSize, cellSize*.8);
+                }
+                else
+                {
+                    context.font = '900 ' + cellSize*.8 + 'px arial';
+                    const noteName = NoteName(this.key);
+                    lightWeightMode2 || context.strokeText(noteName, (x+.5)*cellSize, (y+.57)*cellSize, cellSize*.8);
+                    context.fillText(noteName, (x+.5)*cellSize, (y+.57)*cellSize, cellSize*.8);
+                }
+            }
+        }
+        else if (this.type == CELL_TYPE_CONTROL)
+        {
+            if (iconRender) // icon display values
+            {
+                if (this.data % 2)
+                    this.attenuation = this.data>1 ? 5 : 0;
+                else
+                    this.key = this.data ? 12 : 0;
+            }
+            else if (!lightWeightMode1)
+            {
+                // show connections
+                const leftCell = GetCell(this.x-1, this.y);
+                const upCell  = GetCell(this.x, this.y-1);
+                const w = .08;
+                if (leftCell && (leftCell.type == CELL_TYPE_CONTROL && leftCell.data % 2 == this.data % 2 || leftCell.type == CELL_TYPE_NOTE))
+                    FillRect(x-w, y+.2, 2*w, .6, '#fff');
+                if (upCell && (upCell.type == CELL_TYPE_CONTROL && upCell.data % 2 == this.data % 2 || upCell.type == CELL_TYPE_NOTE))
+                    FillRect(x+.2, y-w, .6, 2*w, '#fff');
+            }
+
+            if (IsEditing() && (iconRender || !lightWeightMode2))
+            {
+                const text = this.data%2 ? AttenuationName(this.attenuation) : NoteName(this.key);
+                context.fillStyle = '#000'
+                context.font = cellSize/(this.data<2?3:2) + 'px arial';
+                context.fillText(text, (x+.5)*cellSize, (y+.51)*cellSize, cellSize*.8);
+            }
+
+            // flash when note plays
+            frame == this.notePowerFrame && FillRect(x, y, 1, 1, '#fff8');
+        }
+        else if (this.type == CELL_TYPE_BLOCK && this.data == 3 && !iconRender)
+        {
+            // show connections
+            const leftCell = GetCell(this.x-1, this.y);
+            const upCell  = GetCell(this.x, this.y-1);
+            if (leftCell && leftCell.type == this.type && leftCell.data == this.data)
+                FillRect(x-.5, y+.3, 1, .4, '#000');
+            if (upCell && upCell.type == this.type && upCell.data == this.data)
+                FillRect(x+.3, y-.5, .4, 1, '#000');
+        }
+    }
+
+    Rotate(direction)
+    {
+        const mirror = direction == 2;
+        if ((this.type == CELL_TYPE_POWER || this.type == CELL_TYPE_COPY) && this.data < 4)
+        {
+            if (mirror)
+            {
+                if (this.data%2)
+                    this.data = (this.data + 2) % 4;
+            }
+            else
+               this.data = (this.data + 4 + direction) % 4;
+        }
+        else if (this.type == CELL_TYPE_BLOCK && this.data && this.data < 3)
+            this.data = 1 + (this.data + 1 + direction) % 2;
+    }
+
+    GetInfoArray() { return [this.x, this.y, this.type, this.data]; }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Cell control
+
+function Clear()
+{
+    stepPercent = 0;
+    frame = 0;
+    soundCache = {};
+    cellObjects = [];
+}
+
+function Randomize()
+{
+    Clear();
+
+    const probabilities =
+    [
+        2,  // CELL_TYPE_BLOCK
+        1,  // CELL_TYPE_POWER
+        10, // CELL_TYPE_NOTE
+        20, // CELL_TYPE_CONTROL
+        1,  // CELL_TYPE_KILL
+        2,  // CELL_TYPE_COPY
+        2,  // CELL_TYPE_ROTATE
+        5,  // CELL_TYPE_POWER_LINE
+    ];
+    const totalProbability = probabilities.reduce((p,c)=>p+=c);
+
+    let maxCells = cellsWidth * cellsHeight;
+    let x = Math.random()*cellsWidth | 0;
+    let y = Math.random()*cellsHeight | 0;
+    for(let i = maxCells / 4 | 0; i--;)
+    {
+        let type = 0, p = Math.random()*totalProbability;
+        for(; type < probabilities.length && p > 0; ++type)
+            p -= probabilities[type];
+
+        const cell = SetCell(x, y, --type);
+        cell.data = Math.random()*CellDataCount(type) | 0;
+
+        x = Clamp(x + Math.random() * 5 - 2 | 0, cellsWidth-1);
+        y = Clamp(y + Math.random() * 5 - 2 | 0, cellsHeight-1);
+    }
+}
+
+function IsValidCell(x, y) { return x >= 0 && x < cellsWidth && y >= 0 && y < cellsHeight; }
+function GetCell(x, y)     { return IsValidCell(x, y) && cellObjects[x + cellsWidth*y]; }
+function SetCell(x, y, type = -1, data = 0)
+{
+    return cellObjects[x + cellsWidth*y] = IsValidCell(x, y) && type >= 0 ? new Cell(x, y, type, data) : 0;
+}
+
+function SetCellObject(x, y, object)
+{
+    if (!IsValidCell(x, y))
+        return;
+        
+    if (object)
+        object.SetXY(x, y);
+    return cellObjects[x + cellsWidth*y] = object;
+}
+
+function GetCellPosFromScreenPos(x, y) 
+{ return [Math.floor((x/renderScale-renderOffsetX) / cellSize), Math.floor((y/renderScale-renderOffsetY) / cellSize)]; }
+
+///////////////////////////////////////////////////////////////////////////////
+// Input
+
+function CopyCells(remove = 0)
+{
+    copyCells = [];
+    copyCellsWidth = selectAreaMaxX - selectAreaMinX + 1;
+
+    for(let x = selectAreaMinX; x <= selectAreaMaxX; ++x)
+    for(let y = selectAreaMinY; y <= selectAreaMaxY; ++y)
+    {
+        const cell = GetCell(x, y);
+        copyCells.push([x-selectAreaMinX, y-selectAreaMinY, cell ? cell.type : -1, cell && cell.data]);
+        remove && SetCell(x, y); // remove old cells if cut
+    }
+    InitCells();
+    Save();
+}
+
+function PasteCells(x, y, rotateDirection=0)
+{
+    if (copyCells)
+    {
+        let pasted = 0;
+        copyCells.map(c=>
+        {
+            let cell = SetCell(c[0] + x, c[1] + y, c[2], c[3]);
+            if (cell)
+            {
+                cell.Rotate(rotateDirection);
+                pasted = 1;
+            }
+        });
+
+        if (pasted)
+        {
+            const copyCellsHeight = copyCells.length / copyCellsWidth;
+            selectAreaMinX = Clamp(x, cellsWidth-1);
+            selectAreaMinY = Clamp(y, cellsHeight-1);
+            selectAreaMaxX = Clamp(x + copyCellsWidth-1, cellsWidth-1);
+            selectAreaMaxY = Clamp(y + copyCellsHeight-1, cellsHeight-1);
+            hasAreaSelect = 1;
+            InitCells();
+        }
+        else
+        {
+            hasAreaSelect = 0; // did not copy anything
+        }
+    }
+    Save();
+}
+
+function UpdateInput()
+{
+    let keyDown_control = keysDown[17];
+    let keyDown_shift = keysDown[16];
+    let keyDown_tab = keysDown[9];
+    canvasHasMouse = canvas == document.elementFromPoint(mouseX, mouseY);
+    
+    ///////////////////////////////////////////////////////////////////////////////
+    // input update
+    if (keysPressed[32]) // space = toggle edit
+        ToggleEdit();
+
+    usingEyedropper = 0;
+    dragging = 0;
+
+    if (mouseDown == 2 || keyDown_tab) // pan = middle mouse
+    {
+        dragging = 1;
+        if (mouseDown)
+        {
+            if (mousePressed)
+            {
+                dragStartX = mouseX/renderScale - renderOffsetX;
+                dragStartY = mouseY/renderScale - renderOffsetY;
+            }
+
+            renderOffsetX = mouseX/renderScale - dragStartX;
+            renderOffsetY = mouseY/renderScale - dragStartY;
+        }
+    }
+    if (mouseWheel | keysPressed[40] | keysPressed[38]) // zoom = mouse wheel or up/down
+    {   
+        // zoom towards edit object
+        renderOffsetX = renderScale * (renderOffsetX / cellSize + editObject.x + .5);
+        renderOffsetY = renderScale * (renderOffsetY / cellSize + editObject.y + .5);
+        let renderScaleScale = keysPressed[40] ? .75 : keysPressed[38] ? 1/.75 : mouseWheel > 0 ? .9 : 1/.9;
+        renderScale = Clamp(renderScale*renderScaleScale, 2, .25);
+        renderOffsetX = cellSize * (renderOffsetX / renderScale - editObject.x - .5);
+        renderOffsetY = cellSize * (renderOffsetY / renderScale - editObject.y - .5);
+    }
+
+    const editObjectPos = GetCellPosFromScreenPos(mouseX, mouseY);
+    editObject.SetXY(editObjectPos[0], editObjectPos[1]);
+    canvas.style.cursor = dragging ? 'grab' : '';
+
+    // play mode shortcuts
+    for(let mode = 0; mode < PLAY_MODE_COUNT; mode++)
+    {
+        if (keysPressed[mode + 49])
+        {
+            SetPlayMode(mode);
+            break;
+        }
+    }
+
+    if (!IsEditing())
+        return;
+
+    const wasDrawing = drawing;
+    const wasAreaSelecting = areaSelecting;
+    drawing = 0;
+    areaSelecting = 0;
+    erasing = 0;
+
+    if (keyDown_control) // control down
+    {
+        if (debug && keysPressed[82]) // R = randomize
+            Randomize();
+        else if (keysPressed[90]) // undo = Z
+            Undo();
+        else if (keysPressed[89]) // redo = Y
+            Redo();
+        else if (keysPressed[67] || keysPressed[88]) // copy = C, cut = X
+            CopyCells(keysDown[88]);
+        else if (keysPressed[86] && copyCells) // V = paste
+            PasteCells(editObject.x, editObject.y);
+        else if (keysPressed[83]) // save = S
+            ButtonSave();
+        else if (keysPressed[86]) // load = V
+            ButtonLoad();
+    }
+    else
+    {
+        // wasd movement
+        const moveX = keysPressed[68] ? 1 : keysPressed[65] ? -1 : 0;
+        const moveY = keysPressed[83] ? 1 : keysPressed[87] ? -1 : 0;
+        
+        if (moveX || moveY)
+        {
+            if (hasAreaSelect)
+            {
+                CopyCells(1);
+                selectAreaMinX += moveX;
+                selectAreaMinY += moveY;
+                PasteCells(selectAreaMinX, selectAreaMinY);
+
+                if (!hasAreaSelect)
+                    copyCells = 0;
+            }
+        }
+
+        else if (keysPressed[82] || keysPressed[69] || keysPressed[81]) // X/Z=rotate Q=mirror
+        {
+            const direction = keysPressed[81] ? 2 : keysPressed[82] ? 1 : -1
+            if (hasAreaSelect)
+            {
+                CopyCells(1);
+
+                // apply rotate
+                const copyCellsHeight = copyCells.length / copyCellsWidth;
+                copyCells.map(c=>
+                {
+                    let x, y;
+                    if (direction == 2)
+                    {
+                        x = copyCellsWidth - c[0] - 1;
+                        y = c[1];
+                    }
+                    else if (direction == 1)
+                    {
+                        x = copyCellsHeight - c[1] - 1;
+                        y = c[0];
+                    }
+                    else
+                    {
+                        x = c[1];
+                        y = copyCellsWidth - c[0] - 1;
+                    }
+                    c[0] = x;
+                    c[1] = y;
+                });
+                if (direction < 2)
+                    copyCellsWidth = copyCellsHeight;
+
+                PasteCells(selectAreaMinX, selectAreaMinY, direction);
+            }
+            else
+            {
+                let cell = GetCell(editObject.x, editObject.y)
+                if (cell)
+                    cell.Rotate(direction);
+            }
+        }
+    }
+
+    if (canvasHasMouse)
+    {
+        if (keyDown_shift) // shift = area select
+        {
+            areaSelecting = 1;
+            const hadAreaSelect = hasAreaSelect;
+
+            const x = Clamp(editObject.x, cellsWidth-1);
+            const y = Clamp(editObject.y, cellsHeight-1);
+
+            if (mousePressed == 1 || mousePressed == 3 || (mouseDown == 1 || mouseDown == 3) && !hadAreaSelect)
+            {
+                selectAreaStartX = x;
+                selectAreaStartY = y;
+                hasAreaSelect = 1;
+            }
+            if (mouseDown == 1 || mouseDown == 3 || hasAreaSelect && !hadAreaSelect)
+            {
+                selectAreaMinX = Math.min(selectAreaStartX, x);
+                selectAreaMinY = Math.min(selectAreaStartY, y);
+                selectAreaMaxX = Math.max(selectAreaStartX, x);
+                selectAreaMaxY = Math.max(selectAreaStartY, y);
+            }
+        }
+        else if ((mouseDown == 1 || mouseDown == 3 && keyDown_control || mouseButtons == 3)) // normal drawing/erasing mode
+        {
+            drawing = 1;
+            hasAreaSelect = 0;
+            
+            let cell = GetCell(editObject.x, editObject.y);
+            if (keyDown_control || mouseButtons == 3)  // erase mode
+            {
+                SetCell(editObject.x, editObject.y);
+                IsPlaying() || InitCells();
+                erasing = 1;
+            }
+            else if (!cell || cell.type != editObject.type || cell.data != editObject.data) // draw mode
+            {
+                cell = SetCell(editObject.x, editObject.y, editObject.type, editObject.data);
+                if (cell)
+                {
+                    IsPlaying() || InitCells();
+                    cell.angle = editObject.angle;
+                    cell.Audition();
+                }
+            }
+        }
+        else if (mouseDown == 3) // audition sound = right mouse
+        {
+            // only if mouse over new cell
+            const cell = GetCell(editObject.x, editObject.y);
+            usingEyedropper = 1;
+            if (cell && (lastEditX != editObject.x || lastEditY != editObject.y || mousePressed))
+            {
+                cell.Audition();
+                SetEditObject(cell.type, cell.data);
+            }
+        }
+    }
+
+    if (!drawing && wasDrawing)
+    {
+        // exit draw mode
+        drawing = 0;
+        Save();
+    }
+    
+    lastEditX = editObject.x;
+    lastEditY = editObject.y;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Update
+
+function InitCells()
+{
+    stepPercent = 0;
+    frame = 0;
+    frameSoundCount = 0;
+    cellObjects.map(c=>c&&c.Reset());
+    cellObjects.map(c=>c&&c.UpdatePowerPre());
+    cellObjects.map(c=>c&&c.UpdatePower());
+    cellObjects.map(c=>c&&c.UpdateControl());
+    IsPlaying() && cellObjects.map(c=>c&&c.UpdateNotes());
+}
+
+function UpdateFrame()
+{
+    frame++;
+    frameSoundCount = 0;
+
+    // build update list
+    updateListCells = [];
+    cellObjects.map(c=>c&&c.BuildUpdateList());
+
+    // clear move target array, tracks how many things are set to move onto each cell, if more then 1 its a collision
+    cellMoveTargets = [];
+
+    // test movement
+    unpowerSet = new Set();
+    updateListCells.map(c=>c.UpdateTestCopy());
+    unpowerSet.forEach(c =>c.powered = 0 );
+
+    updateListCells.map(c=>c.UpdateTestPowerMove());
+
+    //now each object has a list of directions it wants to be moved in
+    //- for spawning coppiers, the move list is for spawning movement, not self movement
+
+    // collision detect, filter objects moving in multiple directions, get overlapping move targets positions
+    cellObjects.map(c=>c&&c.UpdateCollisionDetect());
+
+    // actual movement and collision detect part 2
+    updateListCells.map(c=>c.UpdateMovement());
+
+    // update everything else
+    cellObjects.map(c=>c&&c.UpdatePowerPre());
+    cellObjects.map(c=>c&&c.UpdatePower());
+    cellObjects.map(c=>c&&c.UpdateControl());
+    cellObjects.map(c=>c&&c.UpdateNotes());
+}
+
+function Update(animationTime = 0)
+{
+    requestAnimationFrame(Update);
+
+    if (!hasFocus && document.hasFocus())
+    {
+        // todo: prevent stuck input
+        keysPressed = [];
+        keysDown = [];
+        mouseDown = mouseButtons = mousePressed = mouseWheel = 0;
+    }
+    hasFocus = document.hasFocus();
+
+    UpdateInput();
+
+    // update time
+    deltaTime = Math.min(.1, (animationTime - lastTime)/1e3);
+    lastTime = animationTime;
+    deltaTime *= GetPlaySpeed();
+    stepPercent += bpm*bpmToStepsPerSecond*deltaTime;
+
+    // update frame
+    if (IsEditing() || IsPaused() || IsStepping() && pauseStep)
+    {
+        stepPercent = Math.min(stepPercent, 1);
+        if (stepPercent == 1 && pauseStep)
+        {
+            SetPlayMode(PLAY_MODE_PAUSE);
+            pauseStep = 0;
+        }
+    }
+    else if (stepPercent > 1)
+    {
+        UpdateFrame();
+        stepPercent = Math.min(stepPercent-1,1);
+
+        if (IsStepping())
+            pauseStep = 1;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////
+    // render
+
+    // prevent center from moving too far away
+    renderOffsetX = Clamp(renderOffsetX, canvas.width/2/renderScale, canvas.width/2/renderScale-cellsWidth*cellSize);
+    renderOffsetY = Clamp(renderOffsetY, canvas.height/2/renderScale, canvas.height/2/renderScale-cellsHeight*cellSize);
+
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
+    context.fillStyle = '#112'
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.scale(renderScale, renderScale);
+    context.translate(renderOffsetX, renderOffsetY);
+
+    [screenMinX, screenMinY] = GetCellPosFromScreenPos(0,0);
+    [screenMaxX, screenMaxY] = GetCellPosFromScreenPos(innerWidth, innerHeight);
+
+    // background
+    FillRect(0, 0, cellsWidth, cellsHeight, '#080808');
+    
+    // draw grid
+    for(let i = 0; i < cellsWidth/4; ++i)
+        FillRect(i*4, 0, 1, cellsHeight, '#111');
+    for(let i = 0; i < cellsHeight/4; ++i)
+        FillRect(0, i*4, cellsWidth, 1, '#111');
+
+    // draw lines around cells
+    context.fillStyle = '#000';
+    for(let i = 0; i <= cellsWidth; ++i)
+        context.fillRect(i*cellSize-1, 0, 2, cellsHeight*cellSize);
+    for(let i = 0; i <= cellsHeight; ++i)
+        context.fillRect(0, i*cellSize-1, cellsWidth*cellSize, 2);
+
+    // render cells
+    cellObjects.map(c=>c&&c.Render(1)); // render newly spawned first
+    cellObjects.map(c=>c&&c.Render(2)); // render all others
+
+    if (IsEditing())
+    {
+        // check if mouse is over canvas or ui
+        if (hasFocus && (canvasHasMouse || drawing) && !dragging && !areaSelecting && IsValidCell(editObject.x, editObject.y)) // edit object
+        {
+            FillRect(editObject.x-.1, editObject.y-.1, 1.2, 1.2, 0, .1,
+                usingEyedropper ? '#0ff' : erasing ? '#f00' : '#fff');
+            //usingEyedropper || erasing || editObject.Render();
+        }
+
+        if (hasAreaSelect) // select box
+        {
+            const minX = Math.min(selectAreaMinX, selectAreaMaxX);
+            const minY = Math.min(selectAreaMinY, selectAreaMaxY);
+            const maxX = Math.max(selectAreaMinX, selectAreaMaxX);
+            const maxY = Math.max(selectAreaMinY, selectAreaMaxY);
+            FillRect(minX-.1, minY-.1, maxX-minX + 1.2, maxY-minY + 1.2, 0, .1, '#0f0');
+        }
+    }
+    
+    ///////////////////////////////////////////////////////////////////////////////
+    // update html / css
+
+    rotateIcons.map( (i, j)=> i.style.transform = `rotate(${animationTime/2e3*(j? 1 : -1)}rad)`)
+    
+    const songBeat = Math.max(0,(frame + stepPercent-1));
+    beatDisplay.style.transform = `rotate(${songBeat*Math.PI/4}rad)`;
+
+    const songTime = songBeat/bpm/bpmToStepsPerSecond;
+    const seconds = songTime%60|0;
+    songTimeDisplay.innerText = (songTime/60|0) +':' + (seconds>9?'':'0') + seconds;
+
+    // context.drawImage(tilesCanvas, 0, 0); // test render tiles
+
+    // watermark and fps
+    const frameFPSTimeNew = performance.now();
+    fps = fps*.9 + .1 * (1e3/(frameFPSTimeNew - frameFPSTime));
+    frameFPSTime = frameFPSTimeNew;
+    watermarkDisplay.innerText = (debug? (fps|0) + ' FPS ' : '') + programName + ' v' + programVersion
+
+    ///////////////////////////////////////////////////////////////////////////////
+    // clean up frame
+
+    keysPressed = [];
+    mousePressed = mouseWheel = 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Save / Load
+
+function GetSaveString()
+{
+    return JSON.stringify(
+    [
+        (IsPlaying() ? cellSavedObjects : cellObjects).map(c=>c&&c.GetInfoArray()),
+        dataVersion,
+        bpm,
+        keyOffset,
+        cellsWidth,
+        cellsHeight,
+        songName,
+    ]);
+}
+
+function LoadSaveString(dataString)
+{
+    const data = JSON.parse(dataString);
+    cellObjects = data.shift().map(c=>c && (new Cell(...c)));
+    const version = data.shift();
+    
+    [bpm, keyOffset, cellsWidth, cellsHeight, songName] = data;
+    
+    instruments = 
+    [
+        [2,0,NoteFrequency(3-12),,1,,1,,,,,,.2,,,,.01,.5,.01,.2],    // lead
+        [,0,NoteFrequency(3-24),,1,,,2,,,.5,,,,,.1,,.4,.05],            // bass
+        [,0,84,,,.1,,.7,,,,.5,,6.7,1,.05],              // kick
+        [,0,2200,,,0.04,3,2,,,800,0.02,,4.8,,0.01,0.1], // hat
+    ];
+
+    InitCells();
+    UpdateUI();
+}
+
+function Save()
+{
+    SaveInternal();
+    SaveUndo();
+}
+
+function SaveInternal()
+{
+    localStorage[programName + 'Save'] = JSON.stringify([
+        dataGlobalVersion,
+        puzzleMode,
+        volume,
+        puzzleSaveData,
+    ]);
+    localStorage[programName + 'SavePuzzle' + puzzleMode] = GetSaveString();
+}
+
+function Load() // only happens on startup
+{
+    // load save data
+    try
+    {
+        const saveObject = JSON.parse(localStorage[programName + 'Save']);
+        if (saveObject[0] == dataGlobalVersion)
+        {
+            puzzleMode = saveObject[1];
+            volume = saveObject[2];
+            puzzleSaveData = saveObject[3];
+        }
+    }
+    catch(e) {}
+    
+    const url = new URL(window.location.href);
+    try
+    {
+        // try to load crushed url
+        const crushedString = url.searchParams.get('c');
+        LoadSaveString(JSONUncrush(crushedString));
+
+        // set to free edit mode
+        puzzleMode = 0;
+    }
+    catch(e)
+    {
+        try
+        {
+            // try to load local storage
+            const dataString = localStorage[programName + 'SavePuzzle' + puzzleMode];
+            LoadSaveString(dataString);
+        }
+        catch(e) 
+        {
+            // could not load saved puzzle, exit puzzle mode
+            puzzleMode = 0;
+        }
+    }
+
+    Save();
+
+    // get rid of search in url
+    url.search = '';
+    window.history.pushState(null,null,url.toString());
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Play Controls
+
+function IsEditing()      { return playMode == PLAY_MODE_STOP; }
+function IsPlaying()      { return playMode > PLAY_MODE_STOP; }
+function IsPaused()       { return playMode == PLAY_MODE_PAUSE; }
+function IsStepping()     { return playMode == PLAY_MODE_STEP; }
+function ToggleEdit()     { SetPlayMode(IsEditing()); }
+function GetPlaySpeed()   { return playMode == PLAY_MODE_FAST ? 8 : IsPlaying() ? 1 : 1/4; }
+
+function SetPlayMode(playModeNew = 0)
+{
+    if (playMode == playModeNew)
+        return;
+
+    const wasPlaying = IsPlaying();
+    const playModeOld = playMode;
+    playMode = playModeNew;
+    
+    // set buttons style
+    playModes.map((mode, i)=>
+    {
+        const e = mode[3];
+        const isActive = i == playMode;
+        e.style.background = isActive ? mode[1] : '#555';
+        e.style.border = '4px solid ' + (isActive ? '#fff' : '#000');
+        
+        // set beat display color
+        isActive && (beatDisplay.style.background = i==0? '#888' : e.style.background);
+    });
+
+    if (wasPlaying != IsPlaying())
+    {
+        // make/load copy of cells while playing
+        if (wasPlaying)
+            cellObjects.map(c=>c && c.Destroy());
+        else
+            cellSavedObjects = cellObjects.map(c=>c && (new Cell(...c.GetInfoArray())));
+
+        Clear();
+        cellObjects = cellSavedObjects.map(c=>c && (new Cell(...c.GetInfoArray())));
+        InitCells();
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// UI
+
+const PLAY_MODE_STOP  = 0;
+const PLAY_MODE_PLAY  = 1;
+const PLAY_MODE_PAUSE = 2;
+const PLAY_MODE_STEP  = 3;
+const PLAY_MODE_FAST  = 4;
+const PLAY_MODE_COUNT = 5;
+
+const playModes = 
+[
+    ['⏹️', '#f00', 'Stop'],
+    ['▶️', '#0f0', 'Play'],
+    ['⏸️', '#ff0', 'Pause'],
+    ['⏯️', '#0ff', 'Step'],
+    ['⏩', '#f0f', 'Fast Forward'],
+];
+
+const objectIconToolbar = 
+[
+    [1,0],[1,1],[1,2],[1,3],[1,4], // CELL_TYPE_POWER
+    [2,0],[2,1],[2,2],[2,3],       // CELL_TYPE_NOTE
+    [3,0],[3,2],[3,1],[3,3],       // CELL_TYPE_CONTROL
+
+    [5,0],[5,1],[5,2],[5,3],[5,4], // CELL_TYPE_COPY
+    [0,0],[0,1],[0,2],[0,3],       // CELL_TYPE_BLOCK
+    [6,0],[6,1],                   // CELL_TYPE_ROTATE
+    [7,0],                         // CELL_TYPE_POWER_LINE
+    [4,0],                         // CELL_TYPE_KILL
+];
+
+function SetEditObject(type, data)
+{
+    editObject.type = type;
+    editObject.data = data;
+    editObject.Reset();
+
+    // update toolbar selection
+    objectIconToolbar.map(i=>{
+        const selected = i[0] == type && i[1] == data;
+        i[2].style.border = selected ? '4px solid #f00' : '2px solid #000';
+        i[2].style.padding = selected ? 2 : 4;
+        i[2].style.background = selected? '#ccc' : '#444';
+    });
+}
+
+function UpdateUI()
+{
+    inputSongName.value = songName;
+    inputBPM.value = bpm = Clamp(bpm|0, inputBPM.max = 360, inputBPM.min = 60);
+    inputKey.value = keyOffset = Clamp(keyOffset|0, inputKey.max = 60, inputKey.min = 0);
+    volumeGain.gain.value = volume;
+    inputVolume.value = volume*100;
+    iconVolume.innerHTML = volume >= .5 ? '🔊' : volume ? '🔉' : '🔈'
+    document.title = '🎵⛏️ ' + programName + ' - ' + (songName ? songName : programSubName);
+
+    BuildToolbarIcons();
+}
+
+function CreateElement(tag, parent, className='', style='', innerHTML='', title='')
+{
+    const e = parent.appendChild(document.createElement(tag));
+    e.className = className;
+    e.style = style;
+    e.innerHTML = innerHTML;
+    e.title = title;
+    return e;
+}
+
+function BuildToolbarIcons()
+{
+    const iconsToolbar = CreateElement('div', toolbarEditControls);
+    objectIconToolbar.map((objectIcon, i)=>
+    {
+        const type = objectIcon[0];
+        const data = objectIcon[1];
+
+        // get or create div and canvas for icons
+        if (!objectIcon[2])
+        {
+            objectIcon[2] = CreateElement('div', iconsToolbar, '', 'display:inline-block');
+            objectIcon[3] = CreateElement('canvas', objectIcon[2], '', '', '', GetCellTypeDescription(...objectIcon));
+
+            // keep track of the icons that rotate
+            type == CELL_TYPE_ROTATE && rotateIcons.push(objectIcon[3]);
+        }
+
+        // render the icon
+        const iconCanvas = objectIcon[3];
+        context = iconCanvas.getContext('2d');
+        iconCanvas.height = iconCanvas.width = cellSize;
+        const cell = new Cell(0, 0, type, data);
+        cell.Render();
+
+        // select event
+        iconCanvas.onmousedown = iconCanvas.onmouseover = e=> drawing || dragging || e.buttons && SetEditObject(type, data);
+
+        // next row
+        (i==objectIconToolbar.length/2-1) && CreateElement('br', iconsToolbar);
+    });
+
+    context = canvas.getContext('2d');
+}
+
+function BuildHTML()
+{
+    let body = document.body, e;
+
+    // main elements
+    toolbar = CreateElement('div', body, 'toolbar');
+    toolbarTop = CreateElement('div', toolbar, 'toolbarTop');
+    toolbarEditControls = CreateElement('div', toolbar, 'toolbarEditControls');
+    canvas = CreateElement('canvas', body);
+    downloadLink = CreateElement('a', body, '', 'display:none');
+    inputFile = CreateElement('input', body, '', 'display:none');
+    inputFile.type = 'file';
+    inputFile.accept = extension;
+
+    BuildTiles();
+    BuildToolbarIcons();
+
+    // watermark
+    watermarkDisplay = CreateElement('div', body, 'watermark');
+
+    // top toolbar
+    inputSongName = CreateElement('input', toolbarTop, '', 'font-size:40;height:50;width:500');
+    inputSongName.placeholder = 'Song Name';
+    inputSongName.onchange = e=> Save(UpdateUI(songName = e.target.value));
+
+    const toolbarSettings = CreateElement('div', toolbarTop,'','padding-right:8;text-align:center');
+
+    e = CreateElement('span', toolbarSettings, '', 'margin:8', 'BPM');
+    inputBPM = e = CreateElement('input', toolbarSettings);
+    e.onchange = e=> Save(UpdateUI(bpm = e.target.value));
+    e.type = 'number';
+
+    CreateElement('br', toolbarSettings);
+    e = CreateElement('span', toolbarSettings, '', 'margin:8', 'Key');
+    inputKey = e = CreateElement('input', toolbarSettings);
+    e.onchange = e=> Save(UpdateUI(keyOffset = e.target.value));
+    e.type = 'number';
+
+    // buttons
+    const buttonsToolbar = CreateElement('div', toolbarTop, '', '');
+    [
+        ['Save',   ButtonSave],
+        ['Load',   ButtonLoad],
+        ['Clear',  ButtonClear],
+        ['Share',  ButtonShare],
+        ['Export', ButtonExport],
+        ['Menu',   ButtonMenu],
+    ]
+    .map((button,i)=>{
+        e = CreateElement('button', buttonsToolbar, '', '', button[0]);
+        e.onclick = button[1];
+        e.onmousedown = e => false;
+        i-2 || CreateElement('br', buttonsToolbar);
+    });
+
+    // beat display circle
+    const beatDisplayWrapper = CreateElement('div', toolbarEditControls);
+    beatDisplay = CreateElement('div', beatDisplayWrapper, 'beatDisplay');
+    beatDisplay.onmousedown=e=>ToggleEdit();
+    beatDisplay.title = 'Toggle Play [Space]'
+    CreateElement('div', beatDisplay, 'beatDisplayMarker');
+    songTimeDisplay = CreateElement('div', beatDisplayWrapper, 'songTimeDisplay');
+
+    // play controls
+    const playControlToolbarWrapper = CreateElement('div', toolbarEditControls);
+    const playControlToolbar = CreateElement('div', playControlToolbarWrapper);
+    playModes.map((mode, i)=>
+    {
+        mode[3] = e = CreateElement('div', playControlToolbar, 'playControl', '', mode[0], mode[2] + ` [${i+1}]`);
+        e.onmousedown = e=> SetPlayMode(i);
+    });
+
+    //e = CreateElement('div', playControlToolbarWrapper, '', 'font-size:9;padding:4;text-align:center', '🍅 ' + programName + ' v' + programVersion + ' - ' + programSubName);
+
+    // volume
+    const volumeSettings = CreateElement('div', playControlToolbarWrapper, '', 'display:flex');
+    iconVolume = CreateElement('span', volumeSettings);
+    inputVolume = e = CreateElement('input', volumeSettings, '', 'flex:1');
+    e.oninput = e=> {volume = Clamp(e.target.value|0,100,0)/100, UpdateUI()};
+    e.onchange = e=> Save(e.target.blur());
+    e.type = 'range';
+
+    cellObjects = [];
+    UpdateUI();
+    SetEditObject(1, 0);
+    SetPlayMode();
+    renderOffsetY = 150;
+    renderOffsetX = 50;
+}
+
+function GetCellTypeDescription(type, data)
+{
+    let description = cellTypeInfo[type][0];
+
+    if (type == CELL_TYPE_BLOCK)
+    {
+        description = [
+            'Push',
+            'Horzontial Push',
+            'Vertical Push',
+            'Solid'
+        ][data] + ' ' + description;
+    }
+    else if (type == CELL_TYPE_POWER)
+        description += data < 4 ? ' Mover' : ' Stationary';
+    else if (type == CELL_TYPE_CONTROL && data%2)
+        description = (data>1? 'Half Attenuate ' : 'Attenuate ') + description;
+    else if (type == CELL_TYPE_CONTROL)
+        description = (data? 'Octave Key ' : 'Semitone Key ') + description;
+    else if (type == CELL_TYPE_COPY)
+        description += (data < 4 ? ' Direction' : ' All Directions');
+    else if (type == CELL_TYPE_ROTATE)
+        description += (data ? ' CW' : ' CCW');
+    return description;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// UI Buttons
+
+function RemoveFocus() { document.activeElement && document.activeElement.blur(); }
+
+function ButtonSave()
+{
+    RemoveFocus();
+
+    downloadLink.href = URL.createObjectURL(new Blob([GetSaveString()]));
+    downloadLink.download = songName + extension;
+    downloadLink.click();
+}
+
+function ButtonLoad()
+{
+    RemoveFocus();
+
+    inputFile.onchange=e=>
+    {
+        let reader = new FileReader();
+        reader.onload = f=> Save(LoadSaveString(f.target.result));
+        e.target.files[0] && reader.readAsText(e.target.files[0]);
+    }
+
+    SetPlayMode();
+    inputFile.click();
+}
+
+function ButtonClear()
+{
+    cellsWidth = defaultCellsWidth;
+    cellsHeight = defaultCellsHeight;
+    bpm = 100;
+    keyOffset = 0;
+    songName = '';
+    SetPlayMode();
+    Clear();
+    UpdateUI();
+    Save();
+}
+
+function ButtonShare()
+{
+    RemoveFocus();
+
+    const crushed = JSONCrush(GetSaveString());
+    const url = new URL(window.location.href);
+    //url.searchParams.append('c', crushed);
+    url.search = '&c=' + crushed;
+    
+    try { navigator.clipboard.writeText(url.toString()); alert('👍 Link coppied!') }
+    catch (e) { alert('👾 I am Error.'); }
+}
+
+function ButtonExport()
+{
+    RemoveFocus();
+
+    // convert to zzfxm
+
+
+    // simulate song for 3 minutes or until no more notes for a bit
+
+    /*
+        - instead of playing/stoping sound, add it to list of events for that frame
+        - process events at end of frame
+
+
+    */
+
+
+    // remove end up until last note
+
+
+
+}
+
+function ButtonMenu()
+{
+    RemoveFocus();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Rendering
+
+function BuildTiles()
+{
+    // create a canvas with each tile
+    tilesCanvas = tilesCanvas || CreateElement('canvas', document.body, '', 'display:none');
+    tilesCanvas.height = 2 * CELL_TYPE_COUNT * cellSize;
+    tilesCanvas.width = 2 * 3 * CELL_MAX_DATA_COUNT * cellSize;
+
+    context = tilesCanvas.getContext('2d');
+    for(let type = 0; type < CELL_TYPE_COUNT; ++type)
+    for(let data = 0; data < CellDataCount(type); ++data)
+    for(let set = 0; set < 3; ++set)
+    {
+        // render cell
+        const x = 2*(data + set*CELL_MAX_DATA_COUNT);
+        const y = 2*type;
+
+        // get color
+        let hue = 0, saturation = 1, lightness = .5;
+        if (type == CELL_TYPE_BLOCK && data < 3)
+            saturation = .2, hue = .1, lightness = .4;
+        else if (type == CELL_TYPE_BLOCK)
+            saturation = 0, lightness = 0;
+        else if (type == CELL_TYPE_POWER)
+            hue = 1/6;
+        else if (type == CELL_TYPE_CONTROL)
+        {
+            saturation = data<2 ? .2 : .7;
+            lightness = set ? .9 : .7;
+            hue = data % 2? .05 : .55;
+        }
+        else if (type == CELL_TYPE_NOTE)
+            hue = data/instrumentCount, lightness = set ? .7 : .3;
+        else if (type == CELL_TYPE_COPY)
+            hue = 5/6, lightness = set ? .6 : .3;
+        else if (type == CELL_TYPE_ROTATE)
+            hue = 3/6, lightness = set ? .6 : .3;
+        else if (type == CELL_TYPE_POWER_LINE)
+            hue = 2/6, lightness = set ? .6 : .3;
+        else if (type == CELL_TYPE_KILL)
+            lightness =  set ? .5 : .2;
+
+        const solid = type == CELL_TYPE_BLOCK && data > 2;
+        const strokeColor = solid ? '#888' : set ? '#fff' : '#000';
+        const outlineWidth = solid ? .2 : set ? .1 : .05;
+        const color = HSLA(hue, saturation, lightness);
+
+        // outline and fill
+        if (type == CELL_TYPE_BLOCK || type == CELL_TYPE_NOTE || type == CELL_TYPE_CONTROL)
+            FillRect(x, y, 1, 1, color, outlineWidth, strokeColor);
+        else if (type == CELL_TYPE_KILL)
+        {
+            // kill octagon
+            context.fillStyle = color;
+            context.strokeStyle = '#ff0';
+            context.lineWidth = 2;
+
+            context.beginPath();
+            for(let i = 9; i--; )
+            {
+                const angle = 2 * Math.PI * (i+.5) / 8;
+                context.arc((x+.5)*cellSize, (y+.5)*cellSize, cellSize*.5, angle, angle);
+            }
+            context.fill();
+            context.stroke();
+        }
+        else
+            FillCircle(x+.5, y+.5, .5, color, outlineWidth, strokeColor);
+
+        // type data
+        if (type == CELL_TYPE_POWER_LINE)
+        {
+            const color = set ? '#fff' : '#000';
+            FillCircle(x+.5, y+.5, .15, color);
+        }
+        else if (type == CELL_TYPE_POWER || type == CELL_TYPE_COPY)
+        {
+            // direction arrow
+            context.strokeStyle = '#000';
+            context.fillStyle = set>1 ? HSLA(0, 1, .5) :  HSLA(hue, saturation, set ? .9 : .1);
+            context.lineWidth = 2;
+
+            const noDirection = data > 3; // use diamond if non directional
+            context.beginPath();
+            for(let i = 5+noDirection; i--; )
+            {
+                const angle = (data+3)/4*Math.PI*2 + 2 * Math.PI * (i-1) / (3+noDirection);
+                context.arc((x+.5)*cellSize, (y+.5)*cellSize, cellSize*.3, angle, angle);
+            }
+            context.fill();
+            context.stroke();
+        }
+        else if (type == CELL_TYPE_BLOCK)
+        {
+            if (data == 2) // vertical
+                FillRect((x+.5) - 1/8, y, 1/4, 1, '#000');
+            else if (data == 1) // horizontal
+                FillRect(x, (y+.5) - 1/8, 1, 1/4, '#000');
+        }
+        else if (type == CELL_TYPE_ROTATE)
+        {
+            let w = .6, h = .2, w2 = .5, h2 = .1, c = HSLA(hue, saturation, set ? 1 : .8);
+            context.save();
+            context.translate((x+.5)*cellSize, (y+.5)*cellSize);
+            FillRect(-w/2, -h/2, w, h, '#000');
+            FillRect(-h/2, -w/2, h, w, '#000');
+            FillRect(-w2/2, -h2/2, w2, h2, c);
+            FillRect(-h2/2, -w2/2, h2, w2, c);
+            context.restore();
+        }
+    }
+
+    context = canvas.getContext('2d');
+}
+
+function FillRect(x, y, w, h, fillStyle, lineWidth = 0, strokeStyle = '#fff')
+{
+    context.save();
+    context.scale(cellSize, cellSize);
+    if (fillStyle)
+    {
+        context.fillStyle = fillStyle;
+        context.fillRect(x, y, w, h);
+    }
+    if (lineWidth)
+    {
+        context.lineWidth = lineWidth
+        context.strokeStyle = strokeStyle;
+        context.strokeRect(x+lineWidth/2, y+lineWidth/2, w-lineWidth, h-lineWidth);
+    }
+    context.restore();
+}
+
+function FillCircle(x, y, r, fillStyle, lineWidth = 0, strokeStyle = '#fff')
+{
+    context.save();
+    context.scale(cellSize, cellSize);
+    context.beginPath();
+    context.arc(x, y, r-lineWidth/2, 0, 7);
+    if (fillStyle)
+    {
+        context.fillStyle = fillStyle;
+        context.fill();
+    }
+    if (lineWidth)
+    {
+        context.lineWidth = lineWidth
+        context.strokeStyle = strokeStyle;
+        context.stroke();
+    }
+    context.restore();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Undo / Redo
+
+function SaveUndo()
+{
+    undo.push(GetSaveString());
+    redo = [];
+}
+
+function Undo()
+{
+    if (undo.length <= 1)
+        return;
+        
+    redo.push(undo.pop());
+    LoadSaveString(undo[undo.length-1]);
+    SaveInternal();
+}
+
+function Redo()
+{
+    if (!redo.length)
+        return;
+
+    const s = redo.pop();
+    LoadSaveString(undo[undo.push(s)-1]);
+    SaveInternal();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Audio
+
+const zzfxV = .5;    // volume
+const zzfxR = 44100; // sample rate
+const zzfxX = new(top.AudioContext||webkitAudioContext);
+
+// play zzfx sound
+function zzfx(...parameters) { return zzfxP(...zzfxG(...parameters)); }
+
+// create source
+function zzfxS(...samples)
+{    
+    // create buffer and source
+    const buffer = zzfxX.createBuffer(1, samples.length, zzfxR);
+    const source = zzfxX.createBufferSource();
+
+    // copy samples to buffer
+    buffer.getChannelData(0).set(samples);
+    source.buffer = buffer;
+    return source;
+}
+
+// play samples
+function zzfxP(...samples)
+{    
+    // create and start source
+    const source = zzfxS(...samples);
+    source.connect(volumeGain);
+    source.start();
+    return source;
+}
+
+// generate zzfx sound
+const zzfxG=(C=1,h=.05,p=220,d=0,t=0,q=.1,r=0,D=1,u=0,E=0,x=0,F=0,g=0,y=0,z=0,G=0,c=0,v=1,k=0,A=0)=>{let b=2*Math.PI;d=99+d*zzfxR;q=99+q*zzfxR;t*=zzfxR;k*=zzfxR;c*=zzfxR;g=g*zzfxR|0;let l=d+k+t+q+c|0,H=u*=500*b/zzfxR**2;h=p*=(1+2*h*Math.random()-h)*b/zzfxR;let I=(0<z?1:-1)*b/4,f=0,B=0,a=0,J=0,K=0,e=0,m=1,w=[],n;for(;a<l;w[a++]=e)++K%(100*G|0)||(e=r?1<r?2<r?3<r?Math.sin((f%b)**3):Math.max(Math.min(Math.tan(f),1),-1):1-(2*f/b%2+2)%2:1-4*Math.abs(Math.round(f/b)-f/b):Math.sin(f),
+e=(0<e?1:-1)*Math.abs(e)**D*(g?1-A+A*Math.sin(2*Math.PI*a/g):1)*C*zzfxV*(a<d?a/d:a<d+k?1-(a-d)/k*(1-v):a<d+k+t?v:a<l-c?(l-a-c)/q*v:0),e=c?e/2+(c>a?0:(a<l-c?1:(a-l)/c)*w[a-c|0]/2):e),n=(p+=u+=500*E*b/zzfxR**3)*Math.sin(B*z*b/zzfxR-I),f+=n-n*y*(1-1E9*(Math.sin(a)+1)%2),B+=n-n*y*(1-1E9*(Math.sin(a)**2+1)%2),m&&++m>F*zzfxR&&(p+=x*b/zzfxR,h+=x*b/zzfxR,m=0),!g||++J%g||(p=h,u=H,m=m||1);return w}
+
+///////////////////////////////////////////////////////////////////////////////
+
+const programName = 'NoteCraft';
+const programSubName = 'Music Cellular Automata';
+const programVersion = '.01';
+const dataVersion = 1;
+const dataGlobalVersion = 1;
+
+const defaultCellsWidth = 57, defaultCellsHeight = 57;
+const instrumentCount = 4;
+let instruments, cellObjects, cellSavedObjects;
+let cellsWidth = defaultCellsWidth, cellsHeight = defaultCellsHeight;
+let cellSize = 32;
+let bpm = 100;
+let keyOffset = 0;
+let bpmToStepsPerSecond = 4/60;
+let lastTime = 0;
+let frame = -1;
+let pauseStep = 0;
+let editObject = new Cell(0,0);
+let mouseDown, mousePressed, mouseButtons, mouseX=0, mouseY=0, mouseWheel;
+let dragStartX, dragStartY;
+let playMode = -1;
+let deltaTime = 0;
+let auditionMode, frameSoundCount;
+let soundCache;
+let keysDown = [], keysPressed = [];
+let canvas, tilesCanvas, context;
+let stepPercent;
+let inputBPM, inputVolume, iconVolume, inputKey, inputSongName;
+let downloadLink, inputFile, rotateIcons = [];
+let songName = 'Song', extension = '.song';
+let selectAreaStartX, selectAreaStartY, selectAreaMinX, selectAreaMinY, selectAreaMaxX, selectAreaMaxY;
+let renderOffsetX = 0, renderOffsetY = 0, renderScale = 1;
+let copyCells, copyCellsWidth;
+let areaSelecting, hasAreaSelect, drawing, dragging, usingEyedropper, erasing;
+let undo = [], redo = [];
+let toolbar, toolbarEditControls, toolbarTop, beatDisplay, songTimeDisplay;
+let fps = 0, frameFPSTime = 0, watermarkDisplay;
+let hasFocus = 0;
+let screenMinX, screenMinY, screenMaxX, screenMaxY;
+let unpowerSet;
+let canvasHasMouse;
+let puzzleMode = 0, puzzleSaveData = [];
+
+let lastEditX, lastEditY;
+
+let moveTestID = 0;
+let cellMoveTargets, updateListCells;
+
+// volume gain
+let volume = .5;
+let volumeGain = zzfxX.createGain();
+volumeGain.connect(zzfxX.destination);
+volumeGain.gain.value = volume;
+
+BuildHTML();
+context = canvas.getContext('2d');
+
+///////////////////////////////////////////////////////////////////////////////
+// Input
+
+// mouse
+canvas.onmousedown = e=> {mousePressed = mouseDown = e.button + 1; mouseButtons = e.buttons;}
+onmouseup = canvas.onmouseup = e=> {mouseDown = 0; mouseButtons = e.buttons;}
+onmousemove = e=> { mouseX = e.x; mouseY = e.y; }
+oncontextmenu = e=> false;
+
+document.addEventListener('wheel', e=> 
+{
+    e.ctrlKey && e.preventDefault();
+
+    if (e.target == canvas)
+        mouseWheel = e.deltaY;
+
+}, { passive: false });
+
+// keyboard
+onkeydown = e=> 
+{
+    if (e.keyCode == 9  || e.ctrlKey || e.altKey) // prevent tab & control
+        e.preventDefault();
+        
+    if (e.target.localName == 'input')
+        return;
+        
+    e.repeat || (keysDown[e.keyCode] = keysPressed[e.keyCode] =  1);
+};
+
+onkeyup = e=> keysDown[e.keyCode] = 0;
+
+Clear();
+Load();
+Update();
+
+</script>
