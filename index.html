@@ -1697,7 +1697,7 @@ function UpdateUI()
     inputSongName.value = songName;
     inputBPM.value = bpm = Clamp(bpm|0, inputBPM.max = 360, inputBPM.min = 60);
     inputKey.value = keyOffset = Clamp(keyOffset|0, inputKey.max = 60, inputKey.min = 0);
-    volumeGain.gain.value = volume;
+    volumeGain && (volumeGain.gain.value = volume);
     inputVolume.value = volume*100;
     iconVolume.innerHTML = volume >= .5 ? '🔊' : volume ? '🔉' : '🔈'
     document.title = '🎵⛏️ ' + programName + ' - ' + (songName ? songName : programSubName);
@@ -2134,9 +2134,20 @@ function Redo()
 ///////////////////////////////////////////////////////////////////////////////
 // Audio
 
+function CreateAudioContext()
+{ 
+    if (zzfxX)
+        return;
+        
+    zzfxX = new(top.AudioContext||webkitAudioContext); 
+    volumeGain = zzfxX.createGain();
+    volumeGain.connect(zzfxX.destination);
+    volumeGain.gain.value = volume;
+}
+
 const zzfxV = .5;    // volume
 const zzfxR = 44100; // sample rate
-const zzfxX = new(top.AudioContext||webkitAudioContext);
+let zzfxX;
 
 // play zzfx sound
 function zzfx(...parameters) { return zzfxP(...zzfxG(...parameters)); }
@@ -2144,6 +2155,8 @@ function zzfx(...parameters) { return zzfxP(...zzfxG(...parameters)); }
 // create source
 function zzfxS(...samples)
 {    
+    CreateAudioContext();
+
     // create buffer and source
     const buffer = zzfxX.createBuffer(1, samples.length, zzfxR);
     const source = zzfxX.createBufferSource();
@@ -2222,9 +2235,7 @@ let cellMoveTargets, updateListCells;
 
 // volume gain
 let volume = .5;
-let volumeGain = zzfxX.createGain();
-volumeGain.connect(zzfxX.destination);
-volumeGain.gain.value = volume;
+let volumeGain;
 
 BuildHTML();
 context = canvas.getContext('2d');
