@@ -130,6 +130,10 @@ x rework save format
 - render zzfxm music track
 - puzzle mode
 
+- spread key = t
+- convert copy to spaces between
+- radial blend and shadow on bpm wheel
+
 
 - fix share
 
@@ -935,7 +939,7 @@ class Cell
                     FillRect(x+.2, y-w, .6, 2*w, '#fff');
             }
 
-            if (IsEditing() && (iconRender || !lightWeightMode2))
+            if ((IsPaused() || IsStepping()) && (iconRender || !lightWeightMode2))
             {
                 const text = this.data%2 ? AttenuationName(this.attenuation) : NoteName(this.key);
                 context.fillStyle = '#000'
@@ -1605,7 +1609,7 @@ function Load() // only happens on startup
 
 function IsEditing()      { return playMode == PLAY_MODE_STOP; }
 function IsPlaying()      { return playMode > PLAY_MODE_STOP; }
-function IsPaused()       { return playMode == PLAY_MODE_PAUSE; }
+function IsPaused()       { return IsEditing() || playMode == PLAY_MODE_PAUSE; }
 function IsStepping()     { return playMode == PLAY_MODE_STEP; }
 function ToggleEdit()     { SetPlayMode(IsEditing()); }
 function GetPlaySpeed()   { return playMode == PLAY_MODE_FAST ? 8 : IsPlaying() ? 1 : 1/4; }
@@ -1700,7 +1704,7 @@ function UpdateUI()
     volumeGain && (volumeGain.gain.value = volume);
     inputVolume.value = volume*100;
     iconVolume.innerHTML = volume >= .5 ? '🔊' : volume ? '🔉' : '🔈'
-    document.title = '🎵⛏️ ' + programName + ' - ' + (songName ? songName : programSubName);
+    document.title = programIcon + ' ' + programName + ' - ' + (songName ? songName : programSubName);
 
     BuildToolbarIcons();
 }
@@ -2183,6 +2187,7 @@ e=(0<e?1:-1)*Math.abs(e)**D*(g?1-A+A*Math.sin(2*Math.PI*a/g):1)*C*zzfxV*(a<d?a/d
 
 ///////////////////////////////////////////////////////////////////////////////
 
+const programIcon = '🎵⛏️';
 const programName = 'NoteCraft';
 const programSubName = 'Music Cellular Automata';
 const programVersion = '.01';
