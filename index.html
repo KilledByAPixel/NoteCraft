@@ -235,6 +235,7 @@ function HSLA    (h=0, s=0, l=0, a=1)    { return `hsla(${h*360},${s*100}%,${l*1
 function NoteFrequency(offset, root=440) { return root * 2 ** (offset / 12); }
 function NoteName(n=0) { n+=keyOffset; return "CCDDEFFGGAAB"[n%12|0]  + ('02579'.indexOf(n%12-1) < 0 ? '' : '#') + (n < 12 ? '' : n/12|0); }
 function AttenuationName(a=0) { return (10-a || '') + '0%'; }
+function JSONStringifyNoNull(o)          { return JSON.stringify(o).replace(/null/g, ''); }
 
 function GetDirectionXY(direction)
 {
@@ -344,7 +345,6 @@ class Cell
         this.type = type; 
         this.data = data;
         this.angle = 0;
-        this.sound = new Sound();
         this.updateCount = 0;
         this.Reset();
     }
@@ -364,7 +364,7 @@ class Cell
     
     Destroy()
     {
-        this.sound.Stop();
+        this.sound && this.sound.Stop();
         SetCellObject(this.x, this.y);
     }
     
@@ -376,10 +376,25 @@ class Cell
         if (++frameSoundCount > 8) // limit max sounds per frame of music
             return;
 
-        const gain = 1 - this.attenuation/10;
-        const pan = this.x/(cellsWidth-1)*2-1;
-        this.sound.Play(this.type == CELL_TYPE_NOTE ? this.data : 0, this.key, gain, pan);
-        auditionMode && this.sound.Stop(.5);
+        if (simulate)
+            simulatePlayEvents.push([this, this.key, this.attenuation]);
+        else
+        {
+            const gain = 1 - this.attenuation/10;
+            const pan = this.x/(cellsWidth-1)*2-1;
+            if (!this.sound)
+                this.sound = new Sound();
+            this.sound.Play(this.type == CELL_TYPE_NOTE ? this.data : 0, this.key, gain, pan);
+            auditionMode && this.sound.Stop(.5);
+        }
+    }
+
+    StopSound()
+    {
+        if (simulate)
+            simulateStopEvents.push(this);
+        else
+            this.sound && this.sound.Stop();
     }
 
     Audition()
@@ -628,9 +643,12 @@ class Cell
             this.x = x;
             this.y = y;
 
-            // update pan
-            const pan = this.x/(cellsWidth-1)*2-1;
-            this.sound.SetPan(pan);
+            if (this.sound)
+            {
+                // update pan
+                const pan = this.x/(cellsWidth-1)*2-1;
+                this.sound.SetPan(pan);
+            }
             return true;
         }
     }
@@ -748,7 +766,7 @@ class Cell
         
         if (!this.powered)
         {
-            this.sound.Stop();
+            this.StopSound();
             return;
         }
 
@@ -901,18 +919,18 @@ class Cell
                 {
                     context.font = '900 ' + cellSize*.4 + 'px arial';
                     const noteName = NoteName(this.key);
-                    lightWeightMode1 || context.strokeText(noteName, (x+.5)*cellSize, (y+.34)*cellSize, cellSize*.8);
+                    lightWeightMode0 || context.strokeText(noteName, (x+.5)*cellSize, (y+.34)*cellSize, cellSize*.8);
                     context.fillText(noteName, (x+.5)*cellSize, (y+.34)*cellSize, cellSize*.8);
 
                     const attenuationName = AttenuationName(this.attenuation);
-                    lightWeightMode1 || context.strokeText(attenuationName, (x+.5)*cellSize, (y+.75)*cellSize, cellSize*.8);
+                    lightWeightMode0 || context.strokeText(attenuationName, (x+.5)*cellSize, (y+.75)*cellSize, cellSize*.8);
                     context.fillText(attenuationName, (x+.5)*cellSize, (y+.75)*cellSize, cellSize*.8);
                 }
                 else
                 {
                     context.font = '900 ' + cellSize*.8 + 'px arial';
                     const noteName = NoteName(this.key);
-                    lightWeightMode1 || context.strokeText(noteName, (x+.5)*cellSize, (y+.57)*cellSize, cellSize*.8);
+                    lightWeightMode0 || context.strokeText(noteName, (x+.5)*cellSize, (y+.57)*cellSize, cellSize*.8);
                     context.fillText(noteName, (x+.5)*cellSize, (y+.57)*cellSize, cellSize*.8);
                 }
             }
@@ -938,7 +956,7 @@ class Cell
                     FillRect(x+.2, y-w, .6, 2*w, '#fff');
             }
 
-            if ((IsPaused() || IsStepping()) && (iconRender || !lightWeightMode1))
+            if (iconRender || !lightWeightMode1)
             {
                 const text = this.data%2 ? AttenuationName(this.attenuation) : NoteName(this.key);
                 context.fillStyle = '#000'
@@ -1871,7 +1889,7 @@ function BuildHTML()
         e.onclick =e=>
         {
             zzfx(...instruments[i]);
-            let code = prompt(`Instrument ${i+1} ZzFX Code`, `zzfx(...${JSON.stringify(instruments[i]).replace(/null/g, '')})`);
+            let code = prompt(`Instrument ${i+1} ZzFX Code`, `zzfx(...${JSONStringifyNoNull(instruments[i])})`);
             if (!code)
                 return;
 
@@ -1982,7 +2000,7 @@ function ButtonSave()
     RemoveFocus();
 
     downloadLink.href = URL.createObjectURL(new Blob([GetSaveString()]));
-    downloadLink.download = songName + extension;
+    downloadLink.download = (songName || 'Song') + extension;
     downloadLink.click();
 }
 
@@ -2009,6 +2027,8 @@ function ButtonLoad()
 
 function ButtonClear()
 {
+    RemoveFocus();
+
     cellsWidth = defaultCellsWidth;
     cellsHeight = defaultCellsHeight;
     bpm = 100;
@@ -2022,6 +2042,8 @@ function ButtonClear()
 
 function ButtonShare()
 {
+    RemoveFocus();
+
     if (!wantsToShare) // prevent double clicking button
         return;
     loadingMessageDisplay.style.display = 'block';
@@ -2032,37 +2054,7 @@ function ButtonShare()
 function ButtonExport()
 {
     RemoveFocus();
-
-/*
-
-simulate song for 3 minutes or until no more notes for a bit
-
-- instead of playing/stoping sound, add it to list of events for that frame
-- process events at end of frame
-
-list of tracks
-start empty
-for each stop event
-    get the track for that note
-    add a stop
-    mark track as free
-
-for each play event
-     get available track for this instrument, add new track if necessary
-     - may be set to stop from previous note
-     add note play event
-     keep track of which note block is effecting the track
-
-  if change attenate
-    update in track
-
-
-
-
-trim end up until last note
-*/
-
-
+    Export();
 }
 
 function ButtonMenu()
@@ -2267,6 +2259,126 @@ function Redo()
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Export to ZzFXM
+
+let simulate = 0;
+let simulateStopEvents;
+let simulatePlayEvents;
+function Export()
+{
+    SetPlayMode(PLAY_MODE_STOP);
+
+    let length = prompt("Max Length in Seconds", 60);
+    if (!(length > 0))
+        return;
+
+    length = Clamp(length, 60*5);
+
+    // simulate playback
+    simulate = 1;
+    let tracks = [];  // [zzfxmTrack, instrument, activeCell, key, attenuation]
+
+    const maxExportFrameCount = 4*bpm*length/60;
+    while(frame < maxExportFrameCount)
+    {
+        simulateStopEvents = [];
+        simulatePlayEvents = [];
+
+        IsPlaying() ? UpdateFrame() : SetPlayMode(PLAY_MODE_PLAY);
+        
+        // process stop events
+        simulateStopEvents.map(cell=>
+        {
+            // get cell for track
+            let track = tracks.find(e=>e[2] == cell);
+            if (!track)
+                return;
+
+            const trackPattern = track[0];
+            trackPattern[frame] = -1;
+
+            track[2] = 0; // unset track cell
+        });
+
+        // process play/change events
+        simulatePlayEvents.map(e=>
+        {
+            const cell        = e[0];
+            const instrument  = cell.data;
+            const key         = 12 + e[1];
+            const attenuation = e[2]/10;
+
+            // get cell for track
+            let track = tracks.find(e=>e[2] == cell);
+            if (!track)
+            {
+                // find avilable track with no cell and same instrument
+                track = tracks.find(e=>!e[2] && e[1] == instrument);
+                if (!track)
+                {
+                    // add new track
+                    tracks.push([[], instrument, cell, -1, -1]);
+                    track = tracks[tracks.length-1];
+                }
+            }
+
+            const trackPattern     = track[0]; 
+            const trackInstrument  = track[1];
+            const trackCell        = track[2];
+            const trackKey         = track[3];
+            const trackAttenuation = track[4];
+
+            if (key == trackKey && cell == trackCell)
+            {
+                // change attenuation only
+                trackPattern[frame] = Clamp(attenuation, .999, .001); // can't be 0 or 1
+            }
+            else
+            {
+                trackPattern[frame] = key + Clamp(attenuation, .999);
+            }
+
+            track[2] = cell;
+            track[3] = key;
+            track[4] = attenuation;
+        });
+    }
+
+    SetPlayMode(PLAY_MODE_STOP);
+    simulate = 0;
+
+    // build zzfxm data
+    const zzfxmPatterns = [];
+    tracks.map(track=>
+    {
+        const instrument = track[1];
+        let pattern = track[0];
+        pattern.unshift(0);          // pan
+        pattern.unshift(instrument); // instrument
+
+        zzfxmPatterns.push(pattern);
+    });
+
+    // trim end of song
+    let longestPattern = 0;
+    zzfxmPatterns.map(pattern=>
+    {
+        longestPattern = Math.max(pattern.length, longestPattern);
+    
+    });
+    zzfxmPatterns.map(pattern=>
+    {
+        pattern.length = longestPattern;
+    });
+
+    const zzfxmCode = [instruments, [zzfxmPatterns], [0], bpm];
+    const zzfxmString = JSONStringifyNoNull(zzfxmCode);
+    downloadLink.href = URL.createObjectURL(new Blob([zzfxmString]));
+    downloadLink.download = (songName || 'Song') + '.txt';
+    downloadLink.click();
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Audio
 
 function CreateAudioContext()
@@ -2350,7 +2462,7 @@ let canvas, tilesCanvas, context;
 let stepPercent;
 let inputBPM, inputVolume, iconVolume, inputKey, inputSongName;
 let downloadLink, inputFile, rotateIcons = [];
-let songName = '', extension = '.song';
+let songName = '', extension = '.nc';
 let selectAreaStartX, selectAreaStartY, selectAreaMinX, selectAreaMinY, selectAreaMaxX, selectAreaMaxY;
 let renderOffsetX = 0, renderOffsetY = 0, renderScale = 1;
 let copyCells, copyCellsWidth;
