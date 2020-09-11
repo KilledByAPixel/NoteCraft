@@ -117,6 +117,10 @@ input
     outline:9px solid #222;
     display:none;
 }
+.instrumentButton0 { background:hsl(0,60%,60%); }
+.instrumentButton1 { background:hsl(90,60%,60%); }
+.instrumentButton2 { background:hsl(180,60%,60%); }
+.instrumentButton3 { background:hsl(270,60%,60%); }
 </style><body>
 <script src=jsonCrush.js></script>
 <script>'use strict'
@@ -1031,7 +1035,7 @@ function IsValidCell(x, y) { return x >= 0 && x < cellsWidth && y >= 0 && y < ce
 function GetCell(x, y)     { return IsValidCell(x, y) && cellObjects[x + cellsWidth*y]; }
 function SetCell(x, y, type = -1, data = 0)
 {
-    return cellObjects[x + cellsWidth*y] = IsValidCell(x, y) && type >= 0 ? new Cell(x, y, type, data) : 0;
+    return IsValidCell(x, y) ? cellObjects[x + cellsWidth*y] = type >= 0 ? new Cell(x, y, type, data) : 0 : 0;
 }
 
 function SetCellObject(x, y, object)
@@ -1862,9 +1866,8 @@ function BuildHTML()
     const instrumentsToolbar = CreateElement('div', toolbarTop, '', 'margin-right:8');
     for(let i = 0; i < 4; ++i)
     {
-        e = CreateElement('button', instrumentsToolbar, '', 'width:30', i+1);
+        e = CreateElement('button', instrumentsToolbar, 'instrumentButton' + i, 'width:30', i+1);
         e.title = `Instrument ${i+1} Paremeters`;
-        e.style.background = HSLA(i/instrumentCount, .6, .6);
         e.onclick =e=>
         {
             zzfx(...instruments[i]);
