@@ -1,4 +1,4 @@
-<meta charset="utf-8">
+<meta charset=utf-8>
 <style>
 *
 {
@@ -57,7 +57,7 @@ input
     width:50;
     height:50;
     font-size:32;
-    margin:4;
+    margin:3;
     border-radius:9px;
     text-align:center;
 }
@@ -85,8 +85,14 @@ input
     border:3px solid #000;
     background:#222;
     border-radius:50%;
-    margin:22;
-    margin-top:2;
+    position: relative;
+    left:22;
+    top:4;
+}
+.beatDisplaySpinner
+{
+    width:100%;
+    height:100%;
 }
 .watermark
 {
@@ -126,16 +132,10 @@ Selection Controls
 
 big todo
 x rework save format
+- export to zzfxm
 - instrument select
 - render zzfxm music track
 - puzzle mode
-
-- spread key = t
-- convert copy to spaces between
-- radial blend and shadow on bpm wheel
-
-
-- fix share
 
 puzzle object
 - disable some cell types
@@ -153,21 +153,23 @@ puzzle mode
 menu button drop down
 - 0 intro, fur elise? bach  
 - 1 Twinkle Twinkle - notes, movers, key control
-- 2 Mario Part 1 - blocks and walls (mostly filled out, missing some stuff)
-- 3 Tetris - rotators - missing rotators except for first one and other stuff
+x 2 Mario Part 1 - blocks and walls (mostly filled out, missing some stuff)
+x 3 Tetris - rotators - missing rotators except for first one and other stuff
 - 4 Metroid - attenuate control - missing some attenuate control
 - 5 Bubble Bobble = power lines
 - 6 Zelda = kill blocks
-- 7 Row Your Boat - copiers = song partially set up, make a row
+x 7 Row Your Boat - copiers = song partially set up, make a row
 - 8 Mario part 2 - full smb theme
-- 9 Automata - Fill up the level, start empty
-- 10 Automata Zoo - Examples of Automata
+- 9 Automata Zoo - Fill up the level, start with Examples of Automata
 - more songs? classical?
-- Smooth Criminal
 - Fur elise
 - Free Edit Small 25x25
 - Free Edit Medium level 50x50
 - Free Edit Large level 100x100
+- super mario underground theme
+- sonic green hill
+- Smooth Criminal
+- show different ways to make sequences, like pushing a note block
 
 save object
 - save data
@@ -183,26 +185,9 @@ instruments
 - drop down to replace with zzfx strings
 - grayed out for puzzles
 
-todo
-x improve pasting, allow moving after paste and rotating
-x mirror and rotate buttons 
-- shortcut keys, add to titles, need step shortcut
-- view song sequence
-
-- export to zzfxm
-- menu
-- global save object
-- puzzle object
-- puzzles
-- select / place sounds
-- show warning while sharing for slow crush
-- fill = f
-- attenuate gain and pan
-- clean up debug stuff
-- ctrl + s save
-- ctrol + l load
-
 stretch ideas
+- attenuate gain and pan
+- fill = f
 - opt, dont render off screen tiles
 - touch support, how to do stuff?
 - rework stereo
@@ -220,8 +205,12 @@ stretch ideas
 - debug block, pause if powered
 - transition beat circle color
 - erase if both left and right mouse down
-
 - set background color picker
+
+export
+
+play song
+
 
 */
 
@@ -602,7 +591,7 @@ class Cell
     Move()
     {
         if (this.moveFrame == frame)
-            return true;
+            return this.x != this.lastX && this.y != this.lastY; // return true if it moved
         this.moveFrame = frame; // prevent another move
 
         if (this.type == CELL_TYPE_KILL && this.powered)
@@ -810,7 +799,8 @@ class Cell
         {
             const d = GetDirectionXY(i);
             const cell = GetCell(this.x + d[0], this.y +d[1]);
-            cell && (this.type == CELL_TYPE_ROTATE ? frame && cell.Rotate(this.data ? -1 : 1) : cell.SetPowered());
+            if (cell)
+                this.type == CELL_TYPE_ROTATE ? frame && cell.Rotate(this.data ? -1 : 1) : cell.SetPowered();
         }
     }
     
@@ -840,23 +830,29 @@ class Cell
             this.angle = 0;
         const scale = this.type == CELL_TYPE_KILL && set ? Lerp(.5+Math.cos(2*Math.PI*percent)/2, .8, 1) : 1;
 
-        // draw rotated icon
-        context.save();
+        // set alpha when fading in
+        context.globalAlpha = this.spawnFrame == frame ? percent : 1;
 
-        if (this.spawnFrame == frame)
-            context.globalAlpha = percent;
+        if (scale == 1 && !this.angle)
+        {
+            // faster render with no scale or rotate
+            context.drawImage(tilesCanvas, 2*(this.data+CELL_MAX_DATA_COUNT*set)*cellSize, 2*this.type*cellSize, 
+                cellSize, cellSize, cellSize*x, cellSize*y, cellSize, cellSize);
+        }
+        else
+        {
+            context.save();
+            context.scale(cellSize, cellSize);
+            context.translate(x+.5, y+.5);
+            context.rotate(Math.PI * this.angle);
+            context.drawImage(tilesCanvas, 2*(this.data+CELL_MAX_DATA_COUNT*set)*cellSize, 2*this.type*cellSize, 
+                cellSize, cellSize, -scale/2, -scale/2, scale, scale);
+            context.restore();
+        }
 
-        context.scale(cellSize, cellSize);
-        context.translate((x+.5), (y+.5));
-        context.scale(scale, scale);
-        context.rotate(Math.PI * this.angle);
-        context.drawImage(tilesCanvas, 2*(this.data+CELL_MAX_DATA_COUNT*set)*cellSize, 2*this.type*cellSize, 
-            cellSize, cellSize, -1/2, -1/2, 1, 1);
-        context.restore();
-
-        const lightWeightMode1 = !iconRender && renderScale < 1;
-        const lightWeightMode2 = !iconRender && renderScale <= .5;
-        const lightWeightMode3 = !iconRender && renderScale <= .25;
+        const lightWeightMode0 = !iconRender && renderScale < 1;
+        const lightWeightMode1 = !iconRender && renderScale <= .5;
+        const lightWeightMode2 = !iconRender && renderScale <= .25;
         
         // draw extra info
         context.textAlign = 'center';
@@ -864,7 +860,7 @@ class Cell
         if (this.type == CELL_TYPE_POWER_LINE)
         {
             const color = set ? '#fff' : '#000';
-            if (!iconRender && !lightWeightMode1)
+            if (!iconRender && !lightWeightMode0)
             {
                 // show connections
                 const leftCell  = GetCell(this.x-1, this.y);
@@ -876,11 +872,10 @@ class Cell
                 upCell    && UsesPower(upCell.type) && FillRect(x+.45, y, .1, .5, color);
                 downCell  && UsesPower(downCell.type) && FillRect(x+.45, y+.5, .1, .5, color);
             }
-            FillCircle(x+.5, y+.5, .15, color);
         }
         if (this.type == CELL_TYPE_NOTE)
         {
-            if (!iconRender && !lightWeightMode1)
+            if (!iconRender && !lightWeightMode0)
             {
                 // show connections
                 const leftCell = GetCell(this.x-1, this.y);
@@ -896,24 +891,24 @@ class Cell
             context.strokeStyle = '#000';
             context.lineWidth = 3;
 
-            if (iconRender || !lightWeightMode3)
+            if (iconRender || !lightWeightMode2)
             {
                 if (this.attenuation)
                 {
                     context.font = '900 ' + cellSize*.4 + 'px arial';
                     const noteName = NoteName(this.key);
-                    lightWeightMode2 || context.strokeText(noteName, (x+.5)*cellSize, (y+.34)*cellSize, cellSize*.8);
+                    lightWeightMode1 || context.strokeText(noteName, (x+.5)*cellSize, (y+.34)*cellSize, cellSize*.8);
                     context.fillText(noteName, (x+.5)*cellSize, (y+.34)*cellSize, cellSize*.8);
 
                     const attenuationName = AttenuationName(this.attenuation);
-                    lightWeightMode2 || context.strokeText(attenuationName, (x+.5)*cellSize, (y+.75)*cellSize, cellSize*.8);
+                    lightWeightMode1 || context.strokeText(attenuationName, (x+.5)*cellSize, (y+.75)*cellSize, cellSize*.8);
                     context.fillText(attenuationName, (x+.5)*cellSize, (y+.75)*cellSize, cellSize*.8);
                 }
                 else
                 {
                     context.font = '900 ' + cellSize*.8 + 'px arial';
                     const noteName = NoteName(this.key);
-                    lightWeightMode2 || context.strokeText(noteName, (x+.5)*cellSize, (y+.57)*cellSize, cellSize*.8);
+                    lightWeightMode1 || context.strokeText(noteName, (x+.5)*cellSize, (y+.57)*cellSize, cellSize*.8);
                     context.fillText(noteName, (x+.5)*cellSize, (y+.57)*cellSize, cellSize*.8);
                 }
             }
@@ -927,7 +922,7 @@ class Cell
                 else
                     this.key = this.data ? 12 : 0;
             }
-            else if (!lightWeightMode1)
+            else if (!lightWeightMode0)
             {
                 // show connections
                 const leftCell = GetCell(this.x-1, this.y);
@@ -939,7 +934,7 @@ class Cell
                     FillRect(x+.2, y-w, .6, 2*w, '#fff');
             }
 
-            if ((IsPaused() || IsStepping()) && (iconRender || !lightWeightMode2))
+            if ((IsPaused() || IsStepping()) && (iconRender || !lightWeightMode1))
             {
                 const text = this.data%2 ? AttenuationName(this.attenuation) : NoteName(this.key);
                 context.fillStyle = '#000'
@@ -950,7 +945,7 @@ class Cell
             // flash when note plays
             frame == this.notePowerFrame && FillRect(x, y, 1, 1, '#fff8');
         }
-        else if (this.type == CELL_TYPE_BLOCK && this.data == 3 && !iconRender)
+        else if (this.type == CELL_TYPE_BLOCK && this.data == 3 && !iconRender && !lightWeightMode0)
         {
             // show connections
             const leftCell = GetCell(this.x-1, this.y);
@@ -965,6 +960,8 @@ class Cell
     Rotate(direction)
     {
         const mirror = direction == 2;
+        if (mirror && this.type == CELL_TYPE_ROTATE)
+            this.data = this.data ? 0 : 1;
         if ((this.type == CELL_TYPE_POWER || this.type == CELL_TYPE_COPY) && this.data < 4)
         {
             if (mirror)
@@ -987,6 +984,9 @@ class Cell
 
 function Clear()
 {
+    // todo, reset puzzle
+    instruments = defaultInstruments;
+
     stepPercent = 0;
     frame = 0;
     soundCache = {};
@@ -1055,15 +1055,14 @@ function CopyCells(remove = 0)
     copyCells = [];
     copyCellsWidth = selectAreaMaxX - selectAreaMinX + 1;
 
-    for(let x = selectAreaMinX; x <= selectAreaMaxX; ++x)
     for(let y = selectAreaMinY; y <= selectAreaMaxY; ++y)
+    for(let x = selectAreaMinX; x <= selectAreaMaxX; ++x)
     {
         const cell = GetCell(x, y);
         copyCells.push([x-selectAreaMinX, y-selectAreaMinY, cell ? cell.type : -1, cell && cell.data]);
         remove && SetCell(x, y); // remove old cells if cut
     }
     InitCells();
-    Save();
 }
 
 function PasteCells(x, y, rotateDirection=0)
@@ -1073,11 +1072,13 @@ function PasteCells(x, y, rotateDirection=0)
         let pasted = 0;
         copyCells.map(c=>
         {
+            if (IsValidCell(c[0] + x, c[1] + y))
+                pasted = 1;
+
             let cell = SetCell(c[0] + x, c[1] + y, c[2], c[3]);
             if (cell)
             {
                 cell.Rotate(rotateDirection);
-                pasted = 1;
             }
         });
 
@@ -1104,7 +1105,7 @@ function UpdateInput()
     let keyDown_control = keysDown[17];
     let keyDown_shift = keysDown[16];
     let keyDown_tab = keysDown[9];
-    canvasHasMouse = canvas == document.elementFromPoint(mouseX, mouseY);
+    canvasHasMouse = document.body == document.activeElement && canvas == document.elementFromPoint(mouseX, mouseY);
     
     ///////////////////////////////////////////////////////////////////////////////
     // input update
@@ -1199,7 +1200,40 @@ function UpdateInput()
                     copyCells = 0;
             }
         }
+        else if (keysPressed[84]) // T = Spread
+        {
+            if (hasAreaSelect)
+            {
+                CopyCells(1);
 
+                // apply rotate
+                const copyCellsHeight = copyCells.length / copyCellsWidth;
+                const oldCopyCells = [...copyCells];
+                const w = copyCellsWidth*2-1;
+                const h = copyCellsHeight*2-1;
+
+                copyCells = [];
+                for(let y = 0; y < h; y++)
+                for(let x = 0; x < w; x++)
+                {
+                    if (x%2 || y%2)
+                    {
+                        copyCells[x+w*y] = [x, y, -1, 0];
+                        continue;
+                    }
+
+                    let cell = oldCopyCells[(x>>1)+copyCellsWidth*(y>>1)];
+                    cell[0] = x;
+                    cell[1] = y;
+                    copyCells[x+w*y] = cell;
+                }
+                copyCellsWidth = w;
+                copyCells.length = w * h;
+
+                PasteCells(selectAreaMinX, selectAreaMinY);
+            }
+
+        }
         else if (keysPressed[82] || keysPressed[69] || keysPressed[81]) // X/Z=rotate Q=mirror
         {
             const direction = keysPressed[81] ? 2 : keysPressed[82] ? 1 : -1
@@ -1304,6 +1338,9 @@ function UpdateInput()
         }
     }
 
+    if (!areaSelecting && wasAreaSelecting)
+        SaveUndo();
+
     if (!drawing && wasDrawing)
     {
         // exit draw mode
@@ -1317,6 +1354,12 @@ function UpdateInput()
 
 ///////////////////////////////////////////////////////////////////////////////
 // Update
+
+function InitLevel(newPuzzleMode = 0)
+{
+    hasAreaSelect = 0;
+    puzzleMode = newPuzzleMode;
+}
 
 function InitCells()
 {
@@ -1380,7 +1423,7 @@ function Update(animationTime = 0)
         url.search = '&c=' + crushed;
         
         try { navigator.clipboard.writeText(url.toString()); alert('👍 Link coppied!') }
-        catch (e) { alert('👾 I am Error.'); }
+        catch (e) { alert(errorMessage); }
     }
 
     if (!hasFocus && document.hasFocus())
@@ -1482,7 +1525,7 @@ function Update(animationTime = 0)
     rotateIcons.map( (i, j)=> i.style.transform = `rotate(${animationTime/2e3*(j? 1 : -1)}rad)`)
     
     const songBeat = Math.max(0,(frame + stepPercent-1));
-    beatDisplay.style.transform = `rotate(${songBeat*Math.PI/4}rad)`;
+    beatDisplaySpinner.style.transform = `rotate(${songBeat*Math.PI/4}rad)`;
 
     const songTime = songBeat/bpm/bpmToStepsPerSecond;
     const seconds = songTime%60|0;
@@ -1506,7 +1549,17 @@ function Update(animationTime = 0)
 ///////////////////////////////////////////////////////////////////////////////
 // Save / Load
 
-function GetSaveString()
+const C_Frequency = 261.6255653005986;
+
+const defaultInstruments = 
+[
+    [2,0,C_Frequency,,1,,1,,,,,,.2,,,,.01,.5,.01,.2],  // lead
+    [,0,C_Frequency/2,,1,,,2,,,.5,,,,,.1,,.4,.05],     // bass
+    [1.3,0,C_Frequency/4,,.02,,,1.5,,,,,,5,,,,.7,.02], // kick
+    [.5,0,260,,,.04,,,,,,,.1,99,,,,2,.005,.2],         // hat
+];
+
+function GetSaveString(saveCamera = 1)
 {
     return JSON.stringify(
     [
@@ -1517,24 +1570,30 @@ function GetSaveString()
         cellsWidth,
         cellsHeight,
         songName,
+        instruments,
+        saveCamera ? renderScale : 0,
+        renderOffsetX,
+        renderOffsetY
     ]);
 }
 
 function LoadSaveString(dataString)
 {
-    const data = JSON.parse(dataString);
+    const data = JSON.parse(dataString, (key, value) => value === null ? undefined : value);
     cellObjects = data.shift().map(c=>c && (new Cell(...c)));
     const version = data.shift();
     
-    [bpm, keyOffset, cellsWidth, cellsHeight, songName] = data;
+    let renderOffsetXNew, renderOffsetYNew, renderScaleNew;
+    [bpm, keyOffset, cellsWidth, cellsHeight, songName, instruments, renderScaleNew, renderOffsetXNew, renderOffsetYNew] = data;
+
+    instruments || (instruments = defaultInstruments);
     
-    instruments = 
-    [
-        [2,0,NoteFrequency(3-12),,1,,1,,,,,,.2,,,,.01,.5,.01,.2],    // lead
-        [,0,NoteFrequency(3-24),,1,,,2,,,.5,,,,,.1,,.4,.05],            // bass
-        [,0,84,,,.1,,.7,,,,.5,,6.7,1,.05],              // kick
-        [,0,2200,,,0.04,3,2,,,800,0.02,,4.8,,0.01,0.1], // hat
-    ];
+    if (renderScaleNew)
+    {
+        renderScale = renderScaleNew;
+        renderOffsetX = renderOffsetXNew;
+        renderOffsetY = renderOffsetYNew;
+    }
 
     InitCells();
     UpdateUI();
@@ -1597,6 +1656,7 @@ function Load() // only happens on startup
         }
     }
 
+    InitLevel();
     Save();
 
     // get rid of search in url
@@ -1619,6 +1679,9 @@ function SetPlayMode(playModeNew = 0)
     if (playMode == playModeNew)
         return;
 
+    if (playMode >= 0) // enable color transition
+        beatDisplay.style.transition = '.5s';
+
     const wasPlaying = IsPlaying();
     const playModeOld = playMode;
     playMode = playModeNew;
@@ -1632,7 +1695,8 @@ function SetPlayMode(playModeNew = 0)
         e.style.border = '4px solid ' + (isActive ? '#fff' : '#000');
         
         // set beat display color
-        isActive && (beatDisplay.style.background = i==0? '#888' : e.style.background);
+        if (isActive) 
+            beatDisplay.style.background = i==0? '#888' : e.style.background;
     });
 
     if (wasPlaying != IsPlaying())
@@ -1701,10 +1765,12 @@ function UpdateUI()
     inputSongName.value = songName;
     inputBPM.value = bpm = Clamp(bpm|0, inputBPM.max = 360, inputBPM.min = 60);
     inputKey.value = keyOffset = Clamp(keyOffset|0, inputKey.max = 60, inputKey.min = 0);
-    volumeGain && (volumeGain.gain.value = volume);
     inputVolume.value = volume*100;
     iconVolume.innerHTML = volume >= .5 ? '🔊' : volume ? '🔉' : '🔈'
     document.title = programIcon + ' ' + programName + ' - ' + (songName ? songName : programSubName);
+
+    if (volumeGain)
+        volumeGain.gain.value = volume;
 
     BuildToolbarIcons();
 }
@@ -1779,18 +1845,48 @@ function BuildHTML()
     inputSongName.placeholder = 'Song Name';
     inputSongName.onchange = e=> Save(UpdateUI(songName = e.target.value));
 
-    const toolbarSettings = CreateElement('div', toolbarTop,'','padding-right:8;text-align:center');
+    const toolbarSettings = CreateElement('div', toolbarTop,'','margin-right:4;margin-left:4;text-align:center');
 
-    e = CreateElement('span', toolbarSettings, '', 'margin:8', 'BPM');
-    inputBPM = e = CreateElement('input', toolbarSettings);
+    e = CreateElement('span', toolbarSettings, '', '', 'BPM');
+    inputBPM = e = CreateElement('input', toolbarSettings, '', '');
     e.onchange = e=> Save(UpdateUI(bpm = e.target.value));
     e.type = 'number';
 
     CreateElement('br', toolbarSettings);
-    e = CreateElement('span', toolbarSettings, '', 'margin:8', 'Key');
-    inputKey = e = CreateElement('input', toolbarSettings);
+    e = CreateElement('span', toolbarSettings, '', '', 'Key');
+    inputKey = e = CreateElement('input', toolbarSettings, '', '');
     e.onchange = e=> Save(UpdateUI(keyOffset = e.target.value));
     e.type = 'number';
+
+    // instrument select
+    const instrumentsToolbar = CreateElement('div', toolbarTop, '', 'margin-right:8');
+    for(let i = 0; i < 4; ++i)
+    {
+        e = CreateElement('button', instrumentsToolbar, '', 'width:30', i+1);
+        e.title = `Instrument ${i+1} Paremeters`;
+        e.style.background = HSLA(i/instrumentCount, .6, .6);
+        e.onclick =e=>
+        {
+            zzfx(...instruments[i]);
+            let code = prompt(`Instrument ${i+1} ZzFX Code`, `zzfx(...${JSON.stringify(instruments[i]).replace(/null/g, '')})`);
+            if (!code)
+                return;
+
+            code = code.split('[')[1];
+            if (!code)
+            {
+                alert(errorMessage);
+                return;
+            }
+
+            // split up parameters
+            instruments[i] = code.split(',').map(p=>p.length? parseFloat(p) : undefined);
+            zzfx(...instruments[i]);
+            alert('Instrument Loaded!');
+        }
+        e.onmousedown = e => false;
+        i-1 || CreateElement('br', instrumentsToolbar);
+    }
 
     // buttons
     const buttonsToolbar = CreateElement('div', toolbarTop, '', '');
@@ -1814,7 +1910,8 @@ function BuildHTML()
     beatDisplay = CreateElement('div', beatDisplayWrapper, 'beatDisplay');
     beatDisplay.onmousedown=e=>ToggleEdit();
     beatDisplay.title = 'Toggle Play [Space]'
-    CreateElement('div', beatDisplay, 'beatDisplayMarker');
+    beatDisplaySpinner = CreateElement('div', beatDisplay, 'beatDisplaySpinner');
+    e = CreateElement('div', beatDisplaySpinner, 'beatDisplayMarker');
     songTimeDisplay = CreateElement('div', beatDisplayWrapper, 'songTimeDisplay');
 
     // play controls
@@ -1831,7 +1928,7 @@ function BuildHTML()
     // volume
     const volumeSettings = CreateElement('div', playControlToolbarWrapper, '', 'display:flex');
     iconVolume = CreateElement('span', volumeSettings);
-    inputVolume = e = CreateElement('input', volumeSettings, '', 'flex:1');
+    inputVolume = e = CreateElement('input', volumeSettings, '', 'width:280;margin:0');
     e.oninput = e=> {volume = Clamp(e.target.value|0,100,0)/100, UpdateUI()};
     e.onchange = e=> Save(e.target.blur());
     e.type = 'range';
@@ -1893,7 +1990,13 @@ function ButtonLoad()
     inputFile.onchange=e=>
     {
         let reader = new FileReader();
-        reader.onload = f=> Save(LoadSaveString(f.target.result));
+        reader.onload = f=>
+        {
+            LoadSaveString(f.target.result);
+            InitLevel();
+            Save();
+            inputFile.value = ''; // reset input so same file can be reloaded
+        }
         e.target.files[0] && reader.readAsText(e.target.files[0]);
     }
 
@@ -1927,21 +2030,34 @@ function ButtonExport()
 {
     RemoveFocus();
 
-    // convert to zzfxm
+/*
+
+simulate song for 3 minutes or until no more notes for a bit
+
+- instead of playing/stoping sound, add it to list of events for that frame
+- process events at end of frame
+
+list of tracks
+start empty
+for each stop event
+    get the track for that note
+    add a stop
+    mark track as free
+
+for each play event
+     get available track for this instrument, add new track if necessary
+     - may be set to stop from previous note
+     add note play event
+     keep track of which note block is effecting the track
+
+  if change attenate
+    update in track
 
 
-    // simulate song for 3 minutes or until no more notes for a bit
-
-    /*
-        - instead of playing/stoping sound, add it to list of events for that frame
-        - process events at end of frame
 
 
-    */
-
-
-    // remove end up until last note
-
+trim end up until last note
+*/
 
 
 }
@@ -2111,27 +2227,39 @@ function FillCircle(x, y, r, fillStyle, lineWidth = 0, strokeStyle = '#fff')
 
 function SaveUndo()
 {
-    undo.push(GetSaveString());
+    if (undo.length > maxUndos)
+        undo.shift();
+
+    undo.push([GetSaveString(0), hasAreaSelect, selectAreaMinX, selectAreaMinY, selectAreaMaxX, selectAreaMaxY]);
     redo = [];
+}
+
+function LoadUndoObject(u)
+{
+    let saveString;
+    [saveString, hasAreaSelect, selectAreaMinX, selectAreaMinY, selectAreaMaxX, selectAreaMaxY] = u;
+    LoadSaveString(saveString);
 }
 
 function Undo()
 {
+    hasAreaSelect = 0;
     if (undo.length <= 1)
         return;
         
     redo.push(undo.pop());
-    LoadSaveString(undo[undo.length-1]);
+    LoadUndoObject(undo[undo.length-1]);
     SaveInternal();
 }
 
 function Redo()
 {
+    hasAreaSelect = 0;
     if (!redo.length)
         return;
 
     const s = redo.pop();
-    LoadSaveString(undo[undo.push(s)-1]);
+    LoadUndoObject(undo[undo.push(s)-1]);
     SaveInternal();
 }
 
@@ -2187,12 +2315,14 @@ e=(0<e?1:-1)*Math.abs(e)**D*(g?1-A+A*Math.sin(2*Math.PI*a/g):1)*C*zzfxV*(a<d?a/d
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const programIcon = '🎵⛏️';
+const programIcon = '🎵🔨';
 const programName = 'NoteCraft';
 const programSubName = 'Music Cellular Automata';
 const programVersion = '.01';
-const dataVersion = 1;
+const errorMessage = '👾 I am Error.';
+const dataVersion = 2;
 const dataGlobalVersion = 1;
+const maxUndos = 99;
 
 const defaultCellsWidth = 57, defaultCellsHeight = 57;
 const instrumentCount = 4;
@@ -2223,13 +2353,13 @@ let renderOffsetX = 0, renderOffsetY = 0, renderScale = 1;
 let copyCells, copyCellsWidth;
 let areaSelecting, hasAreaSelect, drawing, dragging, usingEyedropper, erasing;
 let undo = [], redo = [];
-let toolbar, toolbarEditControls, toolbarTop, beatDisplay, songTimeDisplay;
+let toolbar, toolbarEditControls, toolbarTop, beatDisplay, beatDisplaySpinner, songTimeDisplay;
 let fps = 0, frameFPSTime = 0, watermarkDisplay;
 let hasFocus = 0;
 let screenMinX, screenMinY, screenMaxX, screenMaxY;
 let unpowerSet;
 let canvasHasMouse;
-let puzzleMode = 0, puzzleSaveData = [];
+let puzzleMode, puzzleSaveData = [];
 let wantsToShare = 0;
 let loadingMessageDisplay;
 
