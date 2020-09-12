@@ -1,4 +1,4 @@
-# NoteCraft
+# NoteCraft 🎵🔨
 Cellular Automata Music Game
 
 How to use
@@ -27,6 +27,7 @@ Shortcuts
 Selection Controls
 - R/E = Rotate
 - Q = Mirror
+- T = Spread
 - WASD = Move
 
 Play Controls
