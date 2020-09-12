@@ -1,7 +1,9 @@
 # NoteCraft 🎵🔨
 Cellular Automata Music Game
 
-How to use
+# [Live Demo](https://killedbyapixel.github.io/NoteCraft/)
+
+How to Use
 - Note blocks make a sound when powered
 - Use control blocks to change the key and attenuation
 - Use power blocks to play notes
