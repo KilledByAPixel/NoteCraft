@@ -465,6 +465,16 @@ class Cell
                 updateListCells.push(this);
             }
         }
+        else if (this.type == CELL_TYPE_ROTATE && this.powered)
+        {
+            // update rotators
+            for(let i = 4; i--;)
+            {
+                const d = GetDirectionXY(i);
+                const cell = GetCell(this.x + d[0], this.y +d[1]);
+                cell && cell.Rotate(this.data ? -1 : 1);
+            }
+        }
     }
 
     AddToMoveList(direction)
@@ -629,7 +639,7 @@ class Cell
     Move()
     {
         if (this.moveFrame == frame)
-            return this.x != this.lastX && this.y != this.lastY; // return true if it moved
+            return this.x != this.lastX || this.y != this.lastY; // return true if it moved
         this.moveFrame = frame; // prevent another move
 
         if (this.type == CELL_TYPE_KILL && this.powered)
@@ -837,11 +847,10 @@ class Cell
             // one direction power transfer
             const d = GetDirectionXY(this.data);
             const cell = GetCell(this.x + d[0], this.y +d[1]);
-            if (cell)
-                this.type == CELL_TYPE_ROTATE ? frame && cell.Rotate(this.data ? -1 : 1) : cell.SetPowered();
+            cell && cell.SetPowered();
             return;
         }
-        else if (this.type != CELL_TYPE_POWER && this.type != CELL_TYPE_POWER_LINE && !(this.type == CELL_TYPE_ROTATE && IsPlaying()))
+        else if (this.type != CELL_TYPE_POWER && this.type != CELL_TYPE_POWER_LINE)
             return; // no need to update more
 
         // transfer power or rotate
@@ -849,8 +858,7 @@ class Cell
         {
             const d = GetDirectionXY(i);
             const cell = GetCell(this.x + d[0], this.y +d[1]);
-            if (cell)
-                this.type == CELL_TYPE_ROTATE ? frame && cell.Rotate(this.data ? -1 : 1) : cell.SetPowered();
+            cell && cell.SetPowered();
         }
     }
     
@@ -2547,7 +2555,7 @@ e=(0<e?1:-1)*Math.abs(e)**D*(g?1-A+A*Math.sin(2*Math.PI*a/g):1)*C*zzfxV*(a<d?a/d
 const programIcon = '🎵🔨';
 const programName = 'NoteCraft';
 const programSubName = 'Music Cellular Automata';
-const programVersion = '.1';
+const programVersion = '.11';
 const errorMessage = '👾 I am Error.';
 const dataVersion = 3;
 const dataGlobalVersion = 1;
