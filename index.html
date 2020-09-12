@@ -13,17 +13,22 @@ body
     white-space:nowrap;
     color:#fff;
 }
-button
+.menuButton
 {
+    box-sizing:border-box;
     width:90;
     height:30;
     background:#ccc;
     color:#000;
     border:2px solid #000;
     border-radius:6px;
+    display:inline-block;
+    text-align:center;
+    vertical-align:middle;
+    padding:0;
 }
-button:active { background:#fff; }
-button:hover  { background:#ffa; }
+.menuButton:active  { background:#faa; }
+.menuButton:hover  { background:#ffa; }
 input
 {
     background:#ccc;
@@ -36,7 +41,7 @@ input
 .toolbar
 {
     position:absolute;
-    background:linear-gradient(#444,#111);
+    background:#222;
     border-bottom:4px solid #555;
     border-right:4px solid #555;
     border-bottom-right-radius:30px;
@@ -54,9 +59,9 @@ input
 .playControl
 {
     display:inline-block;
-    width:50;
-    height:50;
-    font-size:32;
+    width:40;
+    height:40;
+    font-size:28;
     margin:3;
     border-radius:9px;
     text-align:center;
@@ -68,8 +73,8 @@ input
 }
 .beatDisplay
 {
-    width:60;
-    height:60;
+    width:56;
+    height:56;
     background:#0ff;
     border:4px solid #000;
     border-radius:50%;
@@ -127,6 +132,22 @@ input
     margin-left:8;
     margin-bottom:4;
     display:none;
+    border-radius:6px;
+}
+.menu
+{
+    margin:8;
+    padding:8;
+    height:200;
+    background:#000;
+    border:1px solid #fff;
+    border-radius:2px;
+    display:none;
+    overflow-x:auto;
+}
+.level:hover
+{
+    background:#f00;
 }
 </style><body>
 <script src=jsonCrush.js></script>
@@ -136,17 +157,13 @@ let debug = 1;
 
 /*
 
-Selection Controls
-- R/E = Rotate
-- Q = Mirror
-- WASD = Move
+puzzle play
+- first export and save result
+- while playing make sure each frame maches up
+- turn red if it doesnt match
+- count how many frames dont match
 
-big todo
-x rework save format
-x export to zzfxm
-x instrument select
-x render zzfxm music track
-- puzzle mode
+
 
 puzzle object
 - disable some cell types
@@ -190,11 +207,6 @@ save object
     - has won?
     - least cells used
 - one key for cells of each saved puzzle / free mode
-
-instruments
-- include in level info
-- drop down to replace with zzfx strings
-- grayed out for puzzles
 
 stretch ideas
 - attenuate gain and pan
@@ -326,7 +338,7 @@ const cellTypeInfo =
     ['Remove',    1,    1],
     ['Copy',      5,    1],
     ['Rotate',    2,    1],
-    ['Power Line',1,    1]
+    ['Power Line',5,    1]
 ];
 
 const CELL_CONTROL_SEMI_TONE    = 0;
@@ -820,7 +832,16 @@ class Cell
             return; // already powered
         this.powered = 1;
 
-        if (this.type != CELL_TYPE_POWER&& this.type != CELL_TYPE_POWER_LINE && !(this.type == CELL_TYPE_ROTATE && IsPlaying()))
+        if (this.type == CELL_TYPE_POWER_LINE && this.data < 4)
+        {
+            // one direction power transfer
+            const d = GetDirectionXY(this.data);
+            const cell = GetCell(this.x + d[0], this.y +d[1]);
+            if (cell)
+                this.type == CELL_TYPE_ROTATE ? frame && cell.Rotate(this.data ? -1 : 1) : cell.SetPowered();
+            return;
+        }
+        else if (this.type != CELL_TYPE_POWER && this.type != CELL_TYPE_POWER_LINE && !(this.type == CELL_TYPE_ROTATE && IsPlaying()))
             return; // no need to update more
 
         // transfer power or rotate
@@ -865,8 +886,8 @@ class Cell
         if (scale == 1 && !this.angle)
         {
             // faster render with no scale or rotate
-            context.drawImage(tilesCanvas, 2*(this.data+CELL_MAX_DATA_COUNT*set)*cellSize, 2*this.type*cellSize, 
-                cellSize, cellSize, cellSize*x, cellSize*y, cellSize, cellSize);
+            context.drawImage(tilesCanvas, tilesScale*2*(this.data+CELL_MAX_DATA_COUNT*set)*cellSize, tilesScale*2*this.type*cellSize, 
+                tilesScale*cellSize, tilesScale*cellSize, cellSize*x, cellSize*y, cellSize, cellSize);
         }
         else
         {
@@ -874,8 +895,8 @@ class Cell
             context.scale(cellSize, cellSize);
             context.translate(x+.5, y+.5);
             context.rotate(Math.PI * this.angle);
-            context.drawImage(tilesCanvas, 2*(this.data+CELL_MAX_DATA_COUNT*set)*cellSize, 2*this.type*cellSize, 
-                cellSize, cellSize, -scale/2, -scale/2, scale, scale);
+            context.drawImage(tilesCanvas, tilesScale*2*(this.data+CELL_MAX_DATA_COUNT*set)*cellSize, tilesScale*2*this.type*cellSize, 
+                tilesScale*cellSize, tilesScale*cellSize, -scale/2, -scale/2, scale, scale);
             context.restore();
         }
 
@@ -886,22 +907,6 @@ class Cell
         // draw extra info
         context.textAlign = 'center';
         context.textBaseline = 'middle';
-        if (this.type == CELL_TYPE_POWER_LINE)
-        {
-            const color = set ? '#fff' : '#000';
-            if (!iconRender && !lightWeightMode0)
-            {
-                // show connections
-                const leftCell  = GetCell(this.x-1, this.y);
-                const rightCell = GetCell(this.x+1, this.y);
-                const upCell    = GetCell(this.x, this.y-1);
-                const downCell  = GetCell(this.x, this.y+1);
-                leftCell  && UsesPower(leftCell.type) && FillRect(x, y+.45, .5, .1, color);
-                rightCell && UsesPower(rightCell.type) && FillRect(x+.5, y+.45, .5, .1, color);
-                upCell    && UsesPower(upCell.type) && FillRect(x+.45, y, .1, .5, color);
-                downCell  && UsesPower(downCell.type) && FillRect(x+.45, y+.5, .1, .5, color);
-            }
-        }
         if (this.type == CELL_TYPE_NOTE)
         {
             if (!iconRender && !lightWeightMode0)
@@ -991,7 +996,7 @@ class Cell
         const mirror = direction == 2;
         if (mirror && this.type == CELL_TYPE_ROTATE)
             this.data = this.data ? 0 : 1;
-        if ((this.type == CELL_TYPE_POWER || this.type == CELL_TYPE_COPY) && this.data < 4)
+        if ((this.type == CELL_TYPE_POWER || this.type == CELL_TYPE_COPY|| this.type == CELL_TYPE_POWER_LINE) && this.data < 4)
         {
             if (mirror)
             {
@@ -1016,6 +1021,7 @@ function Clear()
     // todo, reset puzzle
     instruments = defaultInstruments;
 
+    hasAreaSelect = 0;
     stepPercent = 0;
     frame = 0;
     soundCache = {};
@@ -1444,7 +1450,6 @@ function Update(animationTime = 0)
     if (!--wantsToShare)
     {
         loadingMessageDisplay.style.display = 'none';
-        RemoveFocus();
 
         const crushed = JSONCrush(GetSaveString());
         const url = new URL(window.location.href);
@@ -1586,7 +1591,7 @@ const C_Frequency = 261.6255653005986;
 const defaultInstruments = 
 [
     [2,0,C_Frequency,,1,,1,,,,,,.2,,,,.01,.5,.01,.2],  // lead
-    [,0,C_Frequency/2,,1,,,2,,,.5,,,,,.1,,.4,.05],     // bass
+    [,0,C_Frequency/4,,1,,,2,,,.5,,,,,.1,,.4,.05],     // bass
     [1.3,0,C_Frequency/4,,.02,,,1.5,,,,,,5,,,,.7,.02], // kick
     [.5,0,260,,,.04,,,,,,,.1,99,,,,2,.005,.2],         // hat
 ];
@@ -1614,6 +1619,9 @@ function LoadSaveString(dataString)
     const data = JSON.parse(dataString, (key, value) => value === null ? undefined : value);
     cellObjects = data.shift().map(c=>c && (new Cell(...c)));
     const version = data.shift();
+
+    // convert old powerlines to multi directional
+    version <= 2 && cellObjects.map(cell=>cell && cell.type == CELL_TYPE_POWER_LINE && (cell.data = 4));
     
     let renderOffsetXNew, renderOffsetYNew, renderScaleNew;
     [bpm, keyOffset, cellsWidth, cellsHeight, songName, instruments, renderScaleNew, renderOffsetXNew, renderOffsetYNew] = data;
@@ -1769,11 +1777,11 @@ const objectIconToolbar =
     [1,0],[1,1],[1,2],[1,3],[1,4], // CELL_TYPE_POWER
     [2,0],[2,1],[2,2],[2,3],       // CELL_TYPE_NOTE
     [3,0],[3,2],[3,1],[3,3],       // CELL_TYPE_CONTROL
+    [6,0],[6,1],                   // CELL_TYPE_ROTATE
 
     [5,0],[5,1],[5,2],[5,3],[5,4], // CELL_TYPE_COPY
     [0,0],[0,1],[0,2],[0,3],       // CELL_TYPE_BLOCK
-    [6,0],[6,1],                   // CELL_TYPE_ROTATE
-    [7,0],                         // CELL_TYPE_POWER_LINE
+    [7,0],[7,1],[7,2],[7,3],[7,4],                         // CELL_TYPE_POWER_LINE
     [4,0],                         // CELL_TYPE_KILL
 ];
 
@@ -1874,7 +1882,7 @@ function BuildHTML()
     watermarkDisplay = CreateElement('div', body, 'watermark');
 
     // top toolbar
-    inputSongName = CreateElement('input', toolbarTop, '', 'font-size:40;height:50;width:500');
+    inputSongName = CreateElement('input', toolbarTop, '', 'font-size:40;height:50;width:530');
     inputSongName.placeholder = 'Song Name';
     inputSongName.onchange = e=> Save(UpdateUI(songName = e.target.value));
 
@@ -1895,7 +1903,7 @@ function BuildHTML()
     const instrumentsToolbar = CreateElement('div', toolbarTop, '', 'margin-right:8');
     for(let i = 0; i < 4; ++i)
     {
-        e = CreateElement('button', instrumentsToolbar, 'instrumentButton' + i, 'width:30', i+1);
+        e = CreateElement('div', instrumentsToolbar, `instrumentButton${i} menuButton`, 'width:30', i+1);
         e.title = `Instrument ${i+1} Paremeters`;
         e.onclick =e=>
         {
@@ -1931,7 +1939,7 @@ function BuildHTML()
         ['Menu',   ButtonMenu],
     ]
     .map((button,i)=>{
-        e = CreateElement('button', buttonsToolbar, '', '', button[0]);
+        e = CreateElement('div', buttonsToolbar, 'menuButton', '', button[0]);
         e.onclick = button[1];
         e.onmousedown = e => false;
         i-2 || CreateElement('br', buttonsToolbar);
@@ -1960,15 +1968,22 @@ function BuildHTML()
     // volume
     const volumeSettings = CreateElement('div', playControlToolbarWrapper, '', 'display:flex');
     iconVolume = CreateElement('span', volumeSettings);
-    inputVolume = e = CreateElement('input', volumeSettings, '', 'width:280;margin:0');
+    inputVolume = e = CreateElement('input', volumeSettings, '', 'width:230;margin:0');
     e.oninput = e=> {volume = Clamp(e.target.value|0,100,0)/100, UpdateUI()};
     e.onchange = e=> Save(e.target.blur());
     e.type = 'range';
 
-    // puzzle song
+    // load message
+    loadingMessageDisplay = CreateElement('div', body, 'loadingMessage');
+
+    // puzzle canvas
     puzzleCanvas = CreateElement('canvas', toolbar, 'puzzle');
 
-    loadingMessageDisplay = CreateElement('div', body, 'loadingMessage');
+    // menu
+    menu = CreateElement('div', toolbar, 'menu', '', 'TEST LEVELS');
+
+    for(let i = 0; i <20; ++i)
+        e = CreateElement('div', menu, 'level', '', 'level' + i);
 
     cellObjects = [];
     UpdateUI();
@@ -2007,45 +2022,59 @@ function GetCellTypeDescription(type, data)
 ///////////////////////////////////////////////////////////////////////////////
 // UI Buttons
 
-function RemoveFocus() { document.activeElement && document.activeElement.blur(); }
-
 function ButtonSave()
 {
-    RemoveFocus();
-
     downloadLink.href = URL.createObjectURL(new Blob([GetSaveString()]));
     downloadLink.download = (songName || 'Song') + extension;
     downloadLink.click();
 }
 
+function LoadFile(file)
+{
+    const reader = new FileReader();
+    reader.onload = e=>
+    {
+        try
+        {
+            SetPlayMode();
+            LoadSaveString(e.target.result);
+            InitLevel();
+        }
+        catch(e) 
+        {
+            alert(errorMessage);
+            SetPlayMode();
+            Clear();
+            UpdateUI();
+        }
+        Save();
+        inputFile.value = ''; // reset input so same file can be reloaded
+    }
+    file && reader.readAsText(file);
+}
+
+// allow drag and drop code into editor
+ondragover = e=> false;
+ondrop = e=>
+{
+    LoadFile(e.dataTransfer.files[0]); 
+    return false;
+}
+
 function ButtonLoad()
 {
-    RemoveFocus();
-
-    inputFile.onchange=e=>
-    {
-        let reader = new FileReader();
-        reader.onload = f=>
-        {
-            LoadSaveString(f.target.result);
-            InitLevel();
-            Save();
-            inputFile.value = ''; // reset input so same file can be reloaded
-        }
-        e.target.files[0] && reader.readAsText(e.target.files[0]);
-    }
-
-    SetPlayMode();
+    inputFile.onchange=e=>LoadFile(e.target.files[0]);
     inputFile.click();
 }
 
 function ButtonClear()
 {
-    RemoveFocus();
+    if (!confirm('Are you sure?'))
+        return;
 
     cellsWidth = defaultCellsWidth;
     cellsHeight = defaultCellsHeight;
-    bpm = 100;
+    bpm = defaultBPM;
     keyOffset = 0;
     songName = '';
     SetPlayMode();
@@ -2056,8 +2085,6 @@ function ButtonClear()
 
 function ButtonShare()
 {
-    RemoveFocus();
-
     if (!wantsToShare) // prevent double clicking button
         return;
     loadingMessageDisplay.style.display = 'block';
@@ -2067,26 +2094,28 @@ function ButtonShare()
 
 function ButtonExport()
 {
-    RemoveFocus();
     Export();
 }
 
 function ButtonMenu()
 {
-    RemoveFocus();
+    //menu.style.display = menu.style.display ? '' : 'block';
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Rendering
 
+const tilesScale = 2;
+
 function BuildTiles()
 {
     // create a canvas with each tile
     tilesCanvas = tilesCanvas || CreateElement('canvas', document.body, '', 'display:none');
-    tilesCanvas.height = 2 * CELL_TYPE_COUNT * cellSize;
-    tilesCanvas.width = 2 * 3 * CELL_MAX_DATA_COUNT * cellSize;
+    tilesCanvas.height = tilesScale * 2 * CELL_TYPE_COUNT * cellSize;
+    tilesCanvas.width = tilesScale * 2 * 3 * CELL_MAX_DATA_COUNT * cellSize;
 
     context = tilesCanvas.getContext('2d');
+    context.scale(tilesScale, tilesScale);
     for(let type = 0; type < CELL_TYPE_COUNT; ++type)
     for(let data = 0; data < CellDataCount(type); ++data)
     for(let set = 0; set < 3; ++set)
@@ -2126,7 +2155,7 @@ function BuildTiles()
         const color = HSLA(hue, saturation, lightness);
 
         // outline and fill
-        if (type == CELL_TYPE_BLOCK || type == CELL_TYPE_NOTE || type == CELL_TYPE_CONTROL)
+        if (type == CELL_TYPE_BLOCK || type == CELL_TYPE_NOTE || type == CELL_TYPE_CONTROL || type == CELL_TYPE_POWER_LINE)
             FillRect(x, y, 1, 1, color, outlineWidth, strokeColor);
         else if (type == CELL_TYPE_KILL)
         {
@@ -2148,12 +2177,7 @@ function BuildTiles()
             FillCircle(x+.5, y+.5, .5, color, outlineWidth, strokeColor);
 
         // type data
-        if (type == CELL_TYPE_POWER_LINE)
-        {
-            const color = set ? '#fff' : '#000';
-            FillCircle(x+.5, y+.5, .15, color);
-        }
-        else if (type == CELL_TYPE_POWER || type == CELL_TYPE_COPY)
+        if (type == CELL_TYPE_POWER || type == CELL_TYPE_COPY || type == CELL_TYPE_POWER_LINE)
         {
             // direction arrow
             context.strokeStyle = '#000';
@@ -2179,7 +2203,7 @@ function BuildTiles()
         }
         else if (type == CELL_TYPE_ROTATE)
         {
-            let w = .6, h = .2, w2 = .5, h2 = .1, c = HSLA(hue, saturation, set ? 1 : .8);
+            let w = .7, h = .25, w2 = .6, h2 = .15, c = HSLA(hue, saturation, set ? 1 : .8);
             context.save();
             context.translate((x+.5)*cellSize, (y+.5)*cellSize);
             FillRect(-w/2, -h/2, w, h, '#000');
@@ -2231,19 +2255,24 @@ function FillCircle(x, y, r, fillStyle, lineWidth = 0, strokeStyle = '#fff')
     context.restore();
 }
 
-let puzzleMusic = 0//[[[2,0,261.6255653005986,,1,,1,,,,,,0.2,,,,0.01,0.5,0.01,0.2],[,0,130.8127826502993,,1,,,2,,,0.5,,,,,0.1,,0.4,0.05],[1.3,0,65.40639132514966,,0.02,,,1.5,,,,,,5,,,,0.7,0.02],[0.5,0,260,,,0.04,,,,,,,0.1,99,,,,2,0.005,0.2]],[[[0,0,28,28,-1,28,-1,24,28,-1,31,0,0,-1,19,0,0,0,24,0,-1,19,0,-1,16,0,-1,21,-1,23,-1,22,21,-1,16,28,31,-1,33,-1,29,31,-1,28,-1,24,26,23,0,-1,24,0,-1,19,0,-1,16,0,-1,21,-1,23,-1,22,21,-1,16,28,31,-1,33,-1,29,31,-1,28,-1,24,26,23,0,-1,,,,,,,,,,,,,,,,,,,,,],[1,0,26,26,-1,26,-1,26,26,-1,31,0,0,-1,19,0,0,0,19,0,-1,16,0,-1,12,0,-1,17,-1,19,-1,18,17,-1,16,24,28,-1,29,-1,26,28,-1,24,-1,21,23,19,0,-1,19,0,-1,16,0,-1,12,0,-1,17,-1,19,-1,18,17,-1,16,24,28,-1,29,-1,26,28,-1,24,-1,21,23,19,0,-1,,,,,,,,,,,,,,,,,,,,,],[2,0,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,],[3,0,,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12]]],[0],100];
+let puzzleMusic = 0;//[[[2,0,261.6255653005986,,1,,1,,,,,,0.2,,,,0.01,0.5,0.01,0.2],[,0,130.8127826502993,,1,,,2,,,0.5,,,,,0.1,,0.4,0.05],[1.3,0,65.40639132514966,,0.02,,,1.5,,,,,,5,,,,0.7,0.02],[0.5,0,260,,,0.04,,,,,,,0.1,99,,,,2,0.005,0.2]],[[[0,0,28,28,-1,28,-1,24,28,-1,31,0,0,-1,19,0,0,0,24,0,-1,19,0,-1,16,0,-1,21,-1,23,-1,22,21,-1,16,28,31,-1,33,-1,29,31,-1,28,-1,24,26,23,0,-1,24,0,-1,19,0,-1,16,0,-1,21,-1,23,-1,22,21,-1,16,28,31,-1,33,-1,29,31,-1,28,-1,24,26,23,0,-1,,,,,,,,,,,,,,,,,,,,,],[1,0,26,26,-1,26,-1,26,26,-1,31,0,0,-1,19,0,0,0,19,0,-1,16,0,-1,12,0,-1,17,-1,19,-1,18,17,-1,16,24,28,-1,29,-1,26,28,-1,24,-1,21,23,19,0,-1,19,0,-1,16,0,-1,12,0,-1,17,-1,19,-1,18,17,-1,16,24,28,-1,29,-1,26,28,-1,24,-1,21,23,19,0,-1,,,,,,,,,,,,,,,,,,,,,],[2,0,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,],[3,0,,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12]]],[0],100];
 
 function RenderPuzzle()
 {
     if (!puzzleMusic)
+    {
+        puzzleCanvas.style.display = '';
         return;
+    }
+
+    puzzleCanvas.style.display = 'block';
 
     const renderCellWidth = 64;
     const renderCellHeight = 16;
     const patterns = puzzleMusic[1][0];
 
     const context = puzzleCanvas.getContext('2d');
-    puzzleCanvas.width = 950;
+    puzzleCanvas.width = 960;
     puzzleCanvas.height = renderCellHeight*patterns.length;
     context.fillStyle = '#fff';
     context.textAlign = 'center';
@@ -2272,20 +2301,16 @@ function RenderPuzzle()
                 continue;
             }
 
-            let attenuation = (value%1 < .99 ? value % 1 : 1)*10 | 0;
-
+            const attenuation = (value%1 < .99 ? value % 1 : 1)*10 | 0;
             const type = CELL_TYPE_NOTE;
             const set = 0;
-
             const x = j*renderCellWidth-renderOffset|0;
             const y = i*renderCellHeight|0;
+            const noteName = NoteName(key);
+            const attenuationName = AttenuationName(attenuation);
 
             context.fillStyle = HSLA(instrument/4, .7, .4);
             context.fillRect(x, y, renderCellWidth, renderCellHeight-2);
-
-            const noteName = NoteName(key);
-            const attenuationName = AttenuationName(attenuation);
-            
             context.fillStyle = '#fff';
             if (j > frame - frameLookBehind-2)
             { 
@@ -2525,16 +2550,17 @@ const programName = 'NoteCraft';
 const programSubName = 'Music Cellular Automata';
 const programVersion = '.01';
 const errorMessage = '👾 I am Error.';
-const dataVersion = 2;
+const dataVersion = 3;
 const dataGlobalVersion = 1;
 const maxUndos = 99;
-
+const defaultBPM = 100;
 const defaultCellsWidth = 57, defaultCellsHeight = 57;
 const instrumentCount = 4;
+
 let instruments, cellObjects, cellSavedObjects;
 let cellsWidth = defaultCellsWidth, cellsHeight = defaultCellsHeight;
 let cellSize = 32;
-let bpm = 100;
+let bpm = defaultBPM;
 let keyOffset = 0;
 let bpmToStepsPerSecond = 4/60;
 let lastTime = 0;
@@ -2548,7 +2574,7 @@ let deltaTime = 0;
 let auditionMode, frameSoundCount;
 let soundCache;
 let keysDown = [], keysPressed = [];
-let canvas, tilesCanvas, context, puzzleCanvas;
+let canvas, tilesCanvas, context, puzzleCanvas, menu;
 let stepPercent;
 let inputBPM, inputVolume, iconVolume, inputKey, inputSongName;
 let downloadLink, inputFile, rotateIcons = [];
