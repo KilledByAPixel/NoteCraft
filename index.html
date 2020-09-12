@@ -1775,14 +1775,15 @@ const playModes =
 const objectIconToolbar = 
 [
     [1,0],[1,1],[1,2],[1,3],[1,4], // CELL_TYPE_POWER
+    [7,0],[7,1],[7,2],[7,3],[7,4], // CELL_TYPE_POWER_LINE
     [2,0],[2,1],[2,2],[2,3],       // CELL_TYPE_NOTE
-    [3,0],[3,2],[3,1],[3,3],       // CELL_TYPE_CONTROL
-    [6,0],[6,1],                   // CELL_TYPE_ROTATE
+    [6,0],                         // CELL_TYPE_ROTATE
 
     [5,0],[5,1],[5,2],[5,3],[5,4], // CELL_TYPE_COPY
     [0,0],[0,1],[0,2],[0,3],       // CELL_TYPE_BLOCK
-    [7,0],[7,1],[7,2],[7,3],[7,4],                         // CELL_TYPE_POWER_LINE
     [4,0],                         // CELL_TYPE_KILL
+    [3,0],[3,2],[3,1],[3,3],       // CELL_TYPE_CONTROL
+    [6,1],                         // CELL_TYPE_ROTATE
 ];
 
 function SetEditObject(type, data)
@@ -1806,7 +1807,7 @@ function UpdateUI()
     inputBPM.value = bpm = Clamp(bpm|0, inputBPM.max = 360, inputBPM.min = 30);
     inputKey.value = keyOffset = Clamp(keyOffset|0, inputKey.max = 60, inputKey.min = 0);
     inputVolume.value = volume*100;
-    iconVolume.innerHTML = volume >= .5 ? '🔊' : volume ? '🔉' : '🔈'
+    iconVolume.innerHTML = volume > .5 ? '🔊' : volume > .1 ? '🔉' : volume ? '🔈' : '🔇'
     document.title = programIcon + ' ' + programName + ' - ' + (songName ? songName : programSubName);
 
     if (volumeGain)
@@ -1963,11 +1964,9 @@ function BuildHTML()
         e.onmousedown = e=> SetPlayMode(i);
     });
 
-    //e = CreateElement('div', playControlToolbarWrapper, '', 'font-size:9;padding:4;text-align:center', '🍅 ' + programName + ' v' + programVersion + ' - ' + programSubName);
-
     // volume
     const volumeSettings = CreateElement('div', playControlToolbarWrapper, '', 'display:flex');
-    iconVolume = CreateElement('span', volumeSettings);
+    iconVolume = CreateElement('div', volumeSettings, '', 'width:30');
     inputVolume = e = CreateElement('input', volumeSettings, '', 'width:230;margin:0');
     e.oninput = e=> {volume = Clamp(e.target.value|0,100,0)/100, UpdateUI()};
     e.onchange = e=> Save(e.target.blur());
@@ -2548,7 +2547,7 @@ e=(0<e?1:-1)*Math.abs(e)**D*(g?1-A+A*Math.sin(2*Math.PI*a/g):1)*C*zzfxV*(a<d?a/d
 const programIcon = '🎵🔨';
 const programName = 'NoteCraft';
 const programSubName = 'Music Cellular Automata';
-const programVersion = '.01';
+const programVersion = '.1';
 const errorMessage = '👾 I am Error.';
 const dataVersion = 3;
 const dataGlobalVersion = 1;
