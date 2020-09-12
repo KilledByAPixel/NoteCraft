@@ -422,7 +422,8 @@ class Cell
         // else play any powred notes (reset and se power)
 
         frameSoundCount = 0;
-        this.powered = 0;
+        //this.powered = 0;
+        cellObjects.map(c=>c&&c.Reset());
         cellObjects.map(c=>c&&c.UpdatePowerPre());
         this.SetPowered();
 
@@ -434,11 +435,10 @@ class Cell
         auditionMode = 1;
         cellObjects.map(c=>c&&c.UpdateNotes());
 
-        // force play if no sound
+        // force play control notes if no sound
         this.type == CELL_TYPE_CONTROL && !frameSoundCount && this.PlaySound(1);
 
         auditionMode = 0;
-        InitCells();
     }
     
     BuildUpdateList()
@@ -754,7 +754,7 @@ class Cell
             if (!cell || cellUpdated[x + cellsWidth * y])
                 return;
 
-            const isControl = cell.type == CELL_TYPE_CONTROL && cell.data%2 == this.data%2;
+            const isControl = cell.type == CELL_TYPE_CONTROL && (this.type==CELL_TYPE_NOTE || cell.data%2 == this.data%2);
             if (!isControl && cell.type != CELL_TYPE_NOTE)
                 return;
 
@@ -806,7 +806,7 @@ class Cell
             if (!cell || cell.notePowerFrame == frame)
                 return;
 
-            const isControl = cell.type == CELL_TYPE_CONTROL && cell.data%2 == this.data%2;
+            const isControl = cell.type == CELL_TYPE_CONTROL && (this.type==CELL_TYPE_NOTE || cell.data%2 == this.data%2);
             if (!isControl && cell.type != CELL_TYPE_NOTE)
                 return;
 
@@ -1155,6 +1155,12 @@ function UpdateInput()
     if (keysPressed[32]) // space = toggle edit
         ToggleEdit();
 
+    const wasDrawing = drawing;
+    const wasAreaSelecting = areaSelecting;
+    const wasUsingEyedropper = usingEyedropper;
+    drawing = 0;
+    areaSelecting = 0;
+    erasing = 0;
     usingEyedropper = 0;
     dragging = 0;
 
@@ -1200,12 +1206,6 @@ function UpdateInput()
 
     if (!IsEditing())
         return;
-
-    const wasDrawing = drawing;
-    const wasAreaSelecting = areaSelecting;
-    drawing = 0;
-    areaSelecting = 0;
-    erasing = 0;
 
     if (keyDown_control) // control down
     {
@@ -1365,18 +1365,27 @@ function UpdateInput()
                     IsPlaying() || InitCells();
                     cell.angle = editObject.angle;
                     cell.Audition();
+                    InitCells();
                 }
             }
         }
         else if (mouseDown == 3) // audition sound = right mouse
         {
             // only if mouse over new cell
-            const cell = GetCell(editObject.x, editObject.y);
             usingEyedropper = 1;
-            if (cell && (lastEditX != editObject.x || lastEditY != editObject.y || mousePressed))
+            if (lastEditX != editObject.x || lastEditY != editObject.y || mousePressed)
             {
-                cell.Audition();
-                SetEditObject(cell.type, cell.data);
+                
+                const cell = GetCell(editObject.x, editObject.y);
+                if (cell)
+                {
+                    cell.Audition();
+                    SetEditObject(cell.type, cell.data);
+                }
+                else
+                {
+                    InitCells(1);
+                }
             }
         }
     }
@@ -1391,6 +1400,9 @@ function UpdateInput()
         Save();
     }
     
+    if (!usingEyedropper && wasUsingEyedropper)
+        InitCells();
+
     lastEditX = editObject.x;
     lastEditY = editObject.y;
 }
@@ -1404,14 +1416,14 @@ function InitLevel(newPuzzleMode = 0)
     puzzleMode = newPuzzleMode;
 }
 
-function InitCells()
+function InitCells(noPower)
 {
     stepPercent = 0;
     frame = 0;
     frameSoundCount = 0;
     cellObjects.map(c=>c&&c.Reset());
     cellObjects.map(c=>c&&c.UpdatePowerPre());
-    cellObjects.map(c=>c&&c.UpdatePower());
+    noPower || cellObjects.map(c=>c&&c.UpdatePower());
     cellObjects.map(c=>c&&c.UpdateControl());
     IsPlaying() && cellObjects.map(c=>c&&c.UpdateNotes());
 }
@@ -1564,7 +1576,7 @@ function Update(animationTime = 0)
     ///////////////////////////////////////////////////////////////////////////////
     // update html / css
 
-    rotateIcons.map( (i, j)=> i.style.transform = `rotate(${animationTime/2e3*(j? 1 : -1)}rad)`)
+    rotateIcons.map( (i, j)=> i.style.transform = `rotate(${animationTime/2e3*(j? -1 : 1)}rad)`)
     
     const songBeat = Math.max(0,(frame + stepPercent-1));
     beatDisplaySpinner.style.transform = `rotate(${songBeat*Math.PI/4}rad)`;
@@ -1784,14 +1796,16 @@ const objectIconToolbar =
 [
     [1,0],[1,1],[1,2],[1,3],[1,4], // CELL_TYPE_POWER
     [7,0],[7,1],[7,2],[7,3],[7,4], // CELL_TYPE_POWER_LINE
-    [2,0],[2,1],[2,2],[2,3],       // CELL_TYPE_NOTE
-    [6,0],                         // CELL_TYPE_ROTATE
+    [6,1],                         // CELL_TYPE_ROTATE
+    [3,2],[3,0],                   // CELL_TYPE_CONTROL
+    [2,0],[2,1],                   // CELL_TYPE_NOTE
 
     [5,0],[5,1],[5,2],[5,3],[5,4], // CELL_TYPE_COPY
     [0,0],[0,1],[0,2],[0,3],       // CELL_TYPE_BLOCK
     [4,0],                         // CELL_TYPE_KILL
-    [3,0],[3,2],[3,1],[3,3],       // CELL_TYPE_CONTROL
-    [6,1],                         // CELL_TYPE_ROTATE
+    [6,0],                         // CELL_TYPE_ROTATE
+    [3,3],[3,1],                   // CELL_TYPE_CONTROL
+    [2,2],[2,3],                   // CELL_TYPE_NOTE
 ];
 
 function SetEditObject(type, data)
@@ -2101,7 +2115,12 @@ function ButtonShare()
 
 function ButtonExport()
 {
-    Export();
+    let beatCount = prompt("Export Beat Count?", bpm);
+    beatCount = Clamp(beatCount, bpm*10);
+    if (!beatCount)
+        return;
+
+    Export(beatCount);
 }
 
 function ButtonMenu()
@@ -2392,22 +2411,15 @@ function Redo()
 let simulate = 0;
 let simulateStopEvents;
 let simulatePlayEvents;
-function Export()
+function Export(beatCount)
 {
     SetPlayMode(PLAY_MODE_STOP);
-
-    let length = prompt("Max Length in Seconds", 60);
-    if (!(length > 0))
-        return;
-
-    length = Clamp(length, 60*5);
 
     // simulate playback
     simulate = 1;
     let tracks = [];  // [zzfxmTrack, instrument, activeCell, key, attenuation]
 
-    const maxExportFrameCount = 4*bpm*length/60;
-    while(frame < maxExportFrameCount)
+    while(frame < 4*beatCount-1)
     {
         simulateStopEvents = [];
         simulatePlayEvents = [];
@@ -2555,7 +2567,7 @@ e=(0<e?1:-1)*Math.abs(e)**D*(g?1-A+A*Math.sin(2*Math.PI*a/g):1)*C*zzfxV*(a<d?a/d
 const programIcon = '🎵🔨';
 const programName = 'NoteCraft';
 const programSubName = 'Music Cellular Automata';
-const programVersion = '.11';
+const programVersion = '.12';
 const errorMessage = '👾 I am Error.';
 const dataVersion = 3;
 const dataGlobalVersion = 1;
