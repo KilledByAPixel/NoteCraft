@@ -121,6 +121,13 @@ input
 .instrumentButton1 { background:hsl(90,60%,60%); }
 .instrumentButton2 { background:hsl(180,60%,60%); }
 .instrumentButton3 { background:hsl(270,60%,60%); }
+.puzzle
+{
+    background:#000;
+    margin-left:8;
+    margin-bottom:4;
+    display:none;
+}
 </style><body>
 <script src=jsonCrush.js></script>
 <script>'use strict'
@@ -136,9 +143,9 @@ Selection Controls
 
 big todo
 x rework save format
-- export to zzfxm
-- instrument select
-- render zzfxm music track
+x export to zzfxm
+x instrument select
+x render zzfxm music track
 - puzzle mode
 
 puzzle object
@@ -1555,6 +1562,9 @@ function Update(animationTime = 0)
 
     // context.drawImage(tilesCanvas, 0, 0); // test render tiles
 
+    // puzzle mode stuff
+    RenderPuzzle();
+
     // watermark and fps
     const frameFPSTimeNew = performance.now();
     fps = fps*.9 + .1 * (1e3/(frameFPSTimeNew - frameFPSTime));
@@ -1785,7 +1795,7 @@ function SetEditObject(type, data)
 function UpdateUI()
 {
     inputSongName.value = songName;
-    inputBPM.value = bpm = Clamp(bpm|0, inputBPM.max = 360, inputBPM.min = 60);
+    inputBPM.value = bpm = Clamp(bpm|0, inputBPM.max = 360, inputBPM.min = 30);
     inputKey.value = keyOffset = Clamp(keyOffset|0, inputKey.max = 60, inputKey.min = 0);
     inputVolume.value = volume*100;
     iconVolume.innerHTML = volume >= .5 ? '🔊' : volume ? '🔉' : '🔈'
@@ -1848,6 +1858,7 @@ function BuildHTML()
 
     // main elements
     toolbar = CreateElement('div', body, 'toolbar');
+
     toolbarTop = CreateElement('div', toolbar, 'toolbarTop');
     toolbarEditControls = CreateElement('div', toolbar, 'toolbarEditControls');
     canvas = CreateElement('canvas', body);
@@ -1953,6 +1964,9 @@ function BuildHTML()
     e.oninput = e=> {volume = Clamp(e.target.value|0,100,0)/100, UpdateUI()};
     e.onchange = e=> Save(e.target.blur());
     e.type = 'range';
+
+    // puzzle song
+    puzzleCanvas = CreateElement('canvas', toolbar, 'puzzle');
 
     loadingMessageDisplay = CreateElement('div', body, 'loadingMessage');
 
@@ -2217,6 +2231,88 @@ function FillCircle(x, y, r, fillStyle, lineWidth = 0, strokeStyle = '#fff')
     context.restore();
 }
 
+let puzzleMusic = 0//[[[2,0,261.6255653005986,,1,,1,,,,,,0.2,,,,0.01,0.5,0.01,0.2],[,0,130.8127826502993,,1,,,2,,,0.5,,,,,0.1,,0.4,0.05],[1.3,0,65.40639132514966,,0.02,,,1.5,,,,,,5,,,,0.7,0.02],[0.5,0,260,,,0.04,,,,,,,0.1,99,,,,2,0.005,0.2]],[[[0,0,28,28,-1,28,-1,24,28,-1,31,0,0,-1,19,0,0,0,24,0,-1,19,0,-1,16,0,-1,21,-1,23,-1,22,21,-1,16,28,31,-1,33,-1,29,31,-1,28,-1,24,26,23,0,-1,24,0,-1,19,0,-1,16,0,-1,21,-1,23,-1,22,21,-1,16,28,31,-1,33,-1,29,31,-1,28,-1,24,26,23,0,-1,,,,,,,,,,,,,,,,,,,,,],[1,0,26,26,-1,26,-1,26,26,-1,31,0,0,-1,19,0,0,0,19,0,-1,16,0,-1,12,0,-1,17,-1,19,-1,18,17,-1,16,24,28,-1,29,-1,26,28,-1,24,-1,21,23,19,0,-1,19,0,-1,16,0,-1,12,0,-1,17,-1,19,-1,18,17,-1,16,24,28,-1,29,-1,26,28,-1,24,-1,21,23,19,0,-1,,,,,,,,,,,,,,,,,,,,,],[2,0,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,],[3,0,,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12]]],[0],100];
+
+function RenderPuzzle()
+{
+    if (!puzzleMusic)
+        return;
+
+    const renderCellWidth = 64;
+    const renderCellHeight = 16;
+    const patterns = puzzleMusic[1][0];
+
+    const context = puzzleCanvas.getContext('2d');
+    puzzleCanvas.width = 950;
+    puzzleCanvas.height = renderCellHeight*patterns.length;
+    context.fillStyle = '#fff';
+    context.textAlign = 'center';
+    context.textBaseline = 'middle';
+
+    const frameRenderLookBehind = 20;
+    const frameLookBehind = 6;
+    const frameLookAhead = 9;
+
+    // get list of patterns for sequence 0
+    patterns.map((pattern,i)=>
+    {
+        const startFrame = Clamp(frame-frameRenderLookBehind-1, pattern.length-2);
+        const endFrame = Clamp(frame+frameLookAhead, pattern.length-2);
+        const renderOffset = (Math.max(1,frame+stepPercent)-frameLookBehind-1)*renderCellWidth;
+        
+        const instrument = pattern[0];
+        let lastAttenuation = -1;
+        for(let j=startFrame; j<endFrame; ++j)
+        {
+            const value = pattern[j+2];
+            let key = value-12|0;
+            if (value < 0 || !value && lastAttenuation < 0)
+            {
+                lastAttenuation = -1;
+                continue;
+            }
+
+            let attenuation = (value%1 < .99 ? value % 1 : 1)*10 | 0;
+
+            const type = CELL_TYPE_NOTE;
+            const set = 0;
+
+            const x = j*renderCellWidth-renderOffset|0;
+            const y = i*renderCellHeight|0;
+
+            context.fillStyle = HSLA(instrument/4, .7, .4);
+            context.fillRect(x, y, renderCellWidth, renderCellHeight-2);
+
+            const noteName = NoteName(key);
+            const attenuationName = AttenuationName(attenuation);
+            
+            context.fillStyle = '#fff';
+            if (j > frame - frameLookBehind-2)
+            { 
+                if (value|0)
+                {
+                    context.clearRect(x, y, 4, renderCellHeight);
+
+                    // new note
+                    const displayString = noteName + (attenuation ? ' ' + attenuationName : '')
+                    context.fillText(displayString, x+renderCellWidth/2, y+renderCellHeight/2, renderCellWidth-4);
+                }
+                else if (attenuation != lastAttenuation)
+                {
+                    // change in volume
+                    const attenuationName = AttenuationName(attenuation);
+                    context.fillText(attenuationName, x+renderCellWidth/2, y+renderCellHeight/2, renderCellWidth-4);
+                }
+            }
+            lastAttenuation = attenuation;
+        }
+    });
+
+    context.lineWidth = 4;
+    context.strokeStyle = '#fff';
+    context.strokeRect(renderCellWidth*frameLookBehind+2, 0, renderCellWidth, renderCellHeight*instrumentCount);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Undo / Redo
 
@@ -2331,7 +2427,7 @@ function Export()
             if (key == trackKey && cell == trackCell)
             {
                 // change attenuation only
-                trackPattern[frame] = Clamp(attenuation, .999, .001); // can't be 0 or 1
+                trackPattern[frame] = Clamp(attenuation, .999); // can't be 1
             }
             else
             {
@@ -2359,20 +2455,14 @@ function Export()
         zzfxmPatterns.push(pattern);
     });
 
-    // trim end of song
-    let longestPattern = 0;
-    zzfxmPatterns.map(pattern=>
-    {
-        longestPattern = Math.max(pattern.length, longestPattern);
-    
-    });
-    zzfxmPatterns.map(pattern=>
-    {
-        pattern.length = longestPattern;
-    });
+    // set all patterns to be same length
+    const longestPattern = zzfxmPatterns.reduce((a,c)=>Math.max(c.length, a), 0);
+    zzfxmPatterns.map(pattern=>pattern.length = longestPattern);
 
-    const zzfxmCode = [instruments, [zzfxmPatterns], [0], bpm];
-    const zzfxmString = JSONStringifyNoNull(zzfxmCode);
+    // sort patterns by instrument
+    zzfxmPatterns.sort((a,b)=>a[0] - b[0]);
+
+    const zzfxmString = JSONStringifyNoNull([instruments, [zzfxmPatterns], [0], bpm]);
     downloadLink.href = URL.createObjectURL(new Blob([zzfxmString]));
     downloadLink.download = (songName || 'Song') + '.txt';
     downloadLink.click();
@@ -2458,7 +2548,7 @@ let deltaTime = 0;
 let auditionMode, frameSoundCount;
 let soundCache;
 let keysDown = [], keysPressed = [];
-let canvas, tilesCanvas, context;
+let canvas, tilesCanvas, context, puzzleCanvas;
 let stepPercent;
 let inputBPM, inputVolume, iconVolume, inputKey, inputSongName;
 let downloadLink, inputFile, rotateIcons = [];
