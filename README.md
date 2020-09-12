@@ -1,5 +1,4 @@
 # NoteCraft 🎵🔨
-Cellular Automata Music Game
 
 # [Live Demo](https://killedbyapixel.github.io/NoteCraft/)
 
