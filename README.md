@@ -8,9 +8,9 @@ Features
 - Program music with cellular automata
 - Export to ZzFXM
 - Share a compressed link to your song
-- Turing Complete
 - Several example songs
-- Instruments are fully customizable
+- Instruments are customizable with ZzFX
+- Turing Complete
 
 Controls
 - Draw = Left Mouse
@@ -24,11 +24,13 @@ Cell Types
 - Power/Mover - Provides power to any touching cell and moves in a direction.
 - Power Line - Transfers power in a direction.
 - Rotator - Rotates cells and redirects movement when powered.
-- Copier - Copies the cell oposite the direction specified to the direction when powered.
+- Copier - Copies and unpoweres the cell oposite the direction specified to the direction when powered.
 - Push Blocks - Can be pushed or not pushed.
 - Stop Block - Destroys anything pushed into it when powered.
 - Note - Plays a note when powered and holds until unpowered.
 - Note Control - Changes the key or attenuation of conneted notes.
+
+It's a little more complicated then that but the basic idea. Check out the examples to get started!
 
 Shortcuts
 - Cut = Control + X
