@@ -149,6 +149,7 @@ input
 
 /*
 
+
 final checklist
 - make sure saveInstruments is on
 - make sure instruments arent in save data
@@ -1629,7 +1630,7 @@ function Update(animationTime = 0)
     const frameFPSTimeNew = performance.now();
     fps = fps*.9 + .1 * (1e3/(frameFPSTimeNew - frameFPSTime));
     frameFPSTime = frameFPSTimeNew;
-    watermarkDisplay.innerText = (debug? (fps|0) + ' FPS ' : '') + programName + ' v' + programVersion
+    watermarkDisplay.innerText = (debug? (fps|0) + ' FPS ' : '') + programName + ' v' + programVersion;
 
     // context.drawImage(tilesCanvas, 0, 0); // test render tiles
 
@@ -1673,9 +1674,9 @@ function GetSaveString(saveCamera = 1)
         songName,
         bpm,
         keyOffset,
-        renderOffsetX,
-        renderOffsetY,
-        saveCamera ? renderScale : 0,
+        renderOffsetX|0,
+        renderOffsetY|0,
+        saveCamera ? renderScale*1e3|0 : 0,
         saveInstruments ? instruments : 0,
         cellsIDs,
         cellsData,
@@ -1694,6 +1695,7 @@ function LoadSaveData(data)
     let version = data[0];
 
     let renderOffsetXNew, renderOffsetYNew, renderScaleNew, cellData, cellIDs;
+
     if (version != dataVersion)
     {
         /*const oldVersion = data.shift();
@@ -1726,7 +1728,7 @@ function LoadSaveData(data)
     
     if (renderScaleNew)
     {
-        renderScale = renderScaleNew;
+        renderScale = renderScaleNew / 1e3;
         renderOffsetX = renderOffsetXNew;
         renderOffsetY = renderOffsetYNew;
     }
@@ -2553,9 +2555,9 @@ e=(0<e?1:-1)*Math.abs(e)**D*(g?1-A+A*Math.sin(2*Math.PI*a/g):1)*C*zzfxV*(a<d?a/d
 const programIcon = '🎵🔨';
 const programName = 'NoteCraft';
 const programSubName = 'Musical Cellular Automata';
-const programVersion = '1.0';
+const programVersion = '1.01';
 const errorMessage = '👾 I am Error.';
-const dataVersion = 5;
+const dataVersion = 6;
 const dataGlobalVersion = 2;
 const maxUndos = 99;
 const defaultBPM = 100;
