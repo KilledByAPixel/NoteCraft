@@ -7,41 +7,31 @@ NoteCraft is a Cellular Automata Music System
 ![NoteCraft Image](/screenshotSmall.png)
 
 Features
-- Program music with cellular automata
 - Export to ZzFXM and OS13k
-- Share a compressed link to your song
+- Share compressed links
 - Several example songs
-- Instruments are customizable with ZzFX
-- Turing Complete
+- Instruments are customizable
+- Undo and Redo
+- Cut, copy, and paste
+- Turing complete!
 
 Controls
 - Draw = Left Mouse
-- Erase = Control + Left Mouse or Left + Right Mouse
-- Test Cells / Eyedropper = Right Mouse
+- Erase = Ctrl + Left Mouse or Left + Right Mouse
+- Test Cell / Eyedropper = Right Mouse
 - Move View = Click & Drag Middle Mouse
 - Zoom View = Wheel
 - Select Area = Shift + Left Mouse
 
 Cell Types
-- Power/Mover - Provides power to any touching cell and moves in a direction.
-- Power Line - Transfers power in a direction.
-- Rotator - Rotates cells and redirects movement when powered.
-- Copier - Copies and unpoweres the cell oposite the direction specified to the direction when powered.
-- Push Blocks - Can be pushed or not pushed.
-- Stop Block - Destroys anything pushed into it when powered.
-- Note - Plays a note when powered and holds until unpowered.
-- Note Control - Changes the key or attenuation of conneted notes.
-
-It's a little more complicated then that but the basic idea. Check out the examples to get started!
-
-Shortcuts
-- Cut = Control + X
-- Copy = Control + C
-- Paste = Control + V
-- Undo = Control + Z
-- Redo = Control + Y
-- Save = Control + S
-- Load = Control + V
+- Power/Mover - Provides power to neighbor cells and moves
+- Power Line - Transfers power
+- Rotator - Rotates cells and redirects movement when powered
+- Copier - Copies and unpoweres cell when powered
+- Push Blocks - Can be pushed or not pushed
+- Stop Block - Destroys anything pushed into it when powered
+- Note - Plays a note when powered and holds until unpowered
+- Note Control - Changes the key or attenuation of conneted notes
 
 Selection Controls
 - R/E = Rotate
