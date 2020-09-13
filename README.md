@@ -4,6 +4,8 @@
 
 NoteCraft is a Cellular Automata Music System
 
+![NoteCraft Image](/screenshotSmall.png)
+
 Features
 - Program music with cellular automata
 - Export to ZzFXM and OS13k
