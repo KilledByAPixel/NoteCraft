@@ -1,3 +1,9 @@
+<!--
+
+🎵🔨 NoteCraft by Frank Force
+https://github.com/KilledByAPixel/NoteCraft
+
+-->
 <meta charset=utf-8>
 <style>
 *
@@ -145,109 +151,9 @@ input
 </style><body>
 <script src=JSONCrush.js?1></script>
 <script src=levelData.js?1></script>
-<script>'use strict'
+<script>
 
-
-/*
-
-
-final checklist
-- make sure saveInstruments is on
-- make sure instruments arent in save data
-- check all buttons and demos
-- check instrument saving nulls
-
-todo
-- undo if load fails
-- reminify
-- submit early build
-- fix load while playing
-
-- fix audition sounds
-
-- automata zoo
-- beats and examples
-
-
-puzzle play
-- first export and save result
-- while playing make sure each frame maches up
-- turn red if it doesnt match
-- count how many frames dont match
-
-
-
-puzzle object
-- disable some cell types
-- zzfxm music track
-- default cells level
-puzzle mode
-- disable bpm and key, and name change
-- prevent copy into puzzle
-- if load, exit puzzle mode
-- clear loads default cells instead of clear
-- smaller levels
-- prevent pasting in or loading (clear level mode)
-- disable some icons?
-
-menu button drop down
-- 0 intro, fur elise? bach  
-- 1 Twinkle Twinkle - notes, movers, key control
-x 2 Mario Part 1 - blocks and walls (mostly filled out, missing some stuff)
-x 3 Tetris - rotators - missing rotators except for first one and other stuff
-- 4 Metroid - attenuate control - missing some attenuate control
-- 5 Bubble Bobble = power lines
-- 6 Zelda = kill blocks
-x 7 Row Your Boat - copiers = song partially set up, make a row
-- 8 Mario part 2 - full smb theme
-- 9 Automata Zoo - Fill up the level, start with Examples of Automata
-- more songs? classical?
-- Fur elise
-- Free Edit Small 25x25
-- Free Edit Medium level 50x50
-- Free Edit Large level 100x100
-- super mario underground theme
-- sonic green hill
-- Smooth Criminal
-- show different ways to make sequences, like pushing a note block
-
-save object
-- save data
-  - puzzle mode (0 is free edit)
-  - volume
-  - for each level
-    - has won?
-    - least cells used
-- one key for cells of each saved puzzle / free mode
-
-stretch ideas
-- attenuate gain and pan
-- fill = f
-- opt, dont render off screen tiles
-- touch support, how to do stuff?
-- rework stereo
-- analuzer
-- visualiser
-- midi in/out
-- pre cache sounds
-- live edit
-- round to scale option
-- save camera pos
-- allow placing notes directly
-- different color wire
-- something to slow down notes
-- text cell type - throw a prompt when placed, show text
-- debug block, pause if powered
-- transition beat circle color
-- erase if both left and right mouse down
-- set background color picker
-
-export
-
-play song
-
-
-*/
+'use strict'
 
 // ==ClosureCompiler==
 // @compilation_level ADVANCED_OPTIMIZATIONS
