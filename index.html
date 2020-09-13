@@ -1260,7 +1260,7 @@ function UpdateInput()
         }
     }
 
-    if (canvasHasMouse)
+    if (canvasHasMouse && !dragging)
     {
         if (keyDown_shift) // shift = area select
         {
@@ -1890,15 +1890,13 @@ function BuildHTML()
     const toolbarSettings = CreateElement('div', toolbarTop,'','margin-right:4;margin-left:4;text-align:center');
 
     e = CreateElement('span', toolbarSettings, '', '', 'BPM');
-    inputBPM = e = CreateElement('input', toolbarSettings, '', '');
-    inputBPM.title = 'Beats Per Minute - How fast the song is';
+    inputBPM = e = CreateElement('input', toolbarSettings, '', '', '', 'Beats Per Minute - How fast the song is');
     e.onchange = e=> Save(UpdateUI(bpm = e.target.value));
     e.type = 'number';
 
     CreateElement('br', toolbarSettings);
     e = CreateElement('span', toolbarSettings, '', '', 'Key');
-    inputKey = e = CreateElement('input', toolbarSettings, '', '');
-    inputKey.title = 'Transpose song key';
+    inputKey = e = CreateElement('input', toolbarSettings, '', '', '', 'Transpose song key');
     e.onchange = e=> Save(UpdateUI(keyOffset = e.target.value));
     e.type = 'number';
 
@@ -1906,8 +1904,7 @@ function BuildHTML()
     const instrumentsToolbar = CreateElement('div', toolbarTop, '', 'margin-right:8');
     for(let i = 0; i < 4; ++i)
     {
-        e = CreateElement('div', instrumentsToolbar, `instrumentButton${i} menuButton`, 'width:30', i+1);
-        e.title = `Instrument ${i+1} Paremeters`;
+        e = CreateElement('div', instrumentsToolbar, `instrumentButton${i} menuButton`, 'width:30', i+1, `Instrument ${i+1} Paremeters`);
         e.onmousedown =e=>
         {
             zzfx(...instruments[i]);
