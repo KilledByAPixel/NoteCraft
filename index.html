@@ -126,19 +126,11 @@ input
 .instrumentButton1 { background:hsl(90,60%,60%); }
 .instrumentButton2 { background:hsl(180,60%,60%); }
 .instrumentButton3 { background:hsl(270,60%,60%); }
-.puzzle
-{
-    background:#000;
-    margin-left:8;
-    margin-bottom:4;
-    display:none;
-    border-radius:6px;
-}
 .menu
 {
     margin:8;
     padding:8;
-    height:200;
+    height:100;
     background:#000;
     border:1px solid #fff;
     border-radius:2px;
@@ -150,12 +142,30 @@ input
     background:#f00;
 }
 </style><body>
-<script src=jsonCrush.js></script>
+<script src=JSONCrush.js></script>
+<script src=levelData.js></script>
 <script>'use strict'
 
-let debug = 1;
 
 /*
+
+final checklist
+- make sure saveInstruments is on
+- make sure instruments arent in save data
+- check all buttons and demos
+- check instrument saving nulls
+
+todo
+- undo if load fails
+- reminify
+- submit early build
+- fix load while playing
+
+- fix audition sounds
+
+- automata zoo
+- beats and examples
+
 
 puzzle play
 - first export and save result
@@ -242,6 +252,9 @@ play song
 // @language_out ECMASCRIPT_2019
 // @output_file_name MusicAutomata.min.js
 // ==/ClosureCompiler==
+
+const debug = 0;
+const saveInstruments = 1;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Helper Functions 
@@ -774,8 +787,6 @@ class Cell
                         value += cell.data < 2 ? 1 : cell.data - 2 ? 5 : 12;
                 }
 
-                if (cell.type == CELL_TYPE_NOTE && auditionMode)
-                    cell.PlaySound();
 
                 UpdateControlCells(x+1, y, isControl);
                 UpdateControlCells(x-1, y, isControl);
@@ -785,7 +796,15 @@ class Cell
         }
 
         UpdateControlCells(this.x, this.y);
-        updatedCells.map( cell=> this.data % 2 ? cell.attenuation = Math.min(value, 10) : cell.key = value );
+        updatedCells.map( cell=> 
+        {
+            this.data % 2 ? cell.attenuation = Math.min(value, 10) : cell.key = value 
+            if (cell.type == CELL_TYPE_NOTE && auditionMode)
+            {
+                cell.powered = 1;
+                cell.PlaySound();
+            }
+        });
     }
 
     UpdateNotes()
@@ -1024,21 +1043,20 @@ class Cell
 ///////////////////////////////////////////////////////////////////////////////
 // Cell control
 
-function Clear()
+function ClearLevel()
 {
-    // todo, reset puzzle
-    instruments = defaultInstruments;
-
-    hasAreaSelect = 0;
-    stepPercent = 0;
-    frame = 0;
-    soundCache = {};
     cellObjects = [];
+    instruments = defaultInstruments;
+    bpm = defaultBPM;
+    keyOffset = 0;
+    songName = '';
+
+    InitLevel();
 }
 
-function Randomize()
+/*function Randomize()
 {
-    Clear();
+    ClearLevel();
 
     const probabilities =
     [
@@ -1068,13 +1086,19 @@ function Randomize()
         x = Clamp(x + Math.random() * 5 - 2 | 0, cellsWidth-1);
         y = Clamp(y + Math.random() * 5 - 2 | 0, cellsHeight-1);
     }
-}
+}*/
 
 function IsValidCell(x, y) { return x >= 0 && x < cellsWidth && y >= 0 && y < cellsHeight; }
 function GetCell(x, y)     { return IsValidCell(x, y) && cellObjects[x + cellsWidth*y]; }
 function SetCell(x, y, type = -1, data = 0)
 {
-    return IsValidCell(x, y) ? cellObjects[x + cellsWidth*y] = type >= 0 ? new Cell(x, y, type, data) : 0 : 0;
+    if (!IsValidCell(x, y))
+        return;
+
+    if (type >= 0)
+        return cellObjects[x + cellsWidth*y] = new Cell(x, y, type, data);
+    else
+        delete cellObjects[x + cellsWidth*y];
 }
 
 function SetCellObject(x, y, object)
@@ -1083,8 +1107,12 @@ function SetCellObject(x, y, object)
         return;
         
     if (object)
+    {
         object.SetXY(x, y);
-    return cellObjects[x + cellsWidth*y] = object;
+        return cellObjects[x + cellsWidth*y] = object;
+    }
+    else
+        delete cellObjects[x + cellsWidth*y];
 }
 
 function GetCellPosFromScreenPos(x, y) 
@@ -1185,7 +1213,7 @@ function UpdateInput()
         renderOffsetX = renderScale * (renderOffsetX / cellSize + editObject.x + .5);
         renderOffsetY = renderScale * (renderOffsetY / cellSize + editObject.y + .5);
         let renderScaleScale = keysPressed[40] ? .75 : keysPressed[38] ? 1/.75 : mouseWheel > 0 ? .9 : 1/.9;
-        renderScale = Clamp(renderScale*renderScaleScale, 2, .25);
+        renderScale = Clamp(renderScale*renderScaleScale, 4, .1);
         renderOffsetX = cellSize * (renderOffsetX / renderScale - editObject.x - .5);
         renderOffsetY = cellSize * (renderOffsetY / renderScale - editObject.y - .5);
     }
@@ -1209,9 +1237,7 @@ function UpdateInput()
 
     if (keyDown_control) // control down
     {
-        if (debug && keysPressed[82]) // R = randomize
-            Randomize();
-        else if (keysPressed[90]) // undo = Z
+        if (keysPressed[90]) // undo = Z
             Undo();
         else if (keysPressed[89]) // redo = Y
             Redo();
@@ -1410,14 +1436,27 @@ function UpdateInput()
 ///////////////////////////////////////////////////////////////////////////////
 // Update
 
-function InitLevel(newPuzzleMode = 0)
+function LoadLevel(levelID)
 {
+    SetPlayMode();
+    LoadSaveData(levelData[levelID]);
+    InitLevel();
+}
+
+function InitLevel()
+{
+    // hide menu
+    menu.style.display = '';
     hasAreaSelect = 0;
-    puzzleMode = newPuzzleMode;
+    SetPlayMode();
+    UpdateUI();
+    InitCells();
+    Save();
 }
 
 function InitCells(noPower)
 {
+    soundCache = {};
     stepPercent = 0;
     frame = 0;
     frameSoundCount = 0;
@@ -1476,7 +1515,7 @@ function Update(animationTime = 0)
         //url.searchParams.append('c', crushed);
         url.search = '&c=' + crushed;
         
-        try { navigator.clipboard.writeText(url.toString()); alert('👍 Link coppied!') }
+        try { navigator['clipboard']['writeText'](url.toString()); alert('👍 Link coppied!') }
         catch (e) { alert(errorMessage); }
     }
 
@@ -1519,12 +1558,13 @@ function Update(animationTime = 0)
     ///////////////////////////////////////////////////////////////////////////////
     // render
 
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
+    
     // prevent center from moving too far away
     renderOffsetX = Clamp(renderOffsetX, canvas.width/2/renderScale, canvas.width/2/renderScale-cellsWidth*cellSize);
     renderOffsetY = Clamp(renderOffsetY, canvas.height/2/renderScale, canvas.height/2/renderScale-cellsHeight*cellSize);
 
-    canvas.width = innerWidth;
-    canvas.height = innerHeight;
     context.fillStyle = '#112'
     context.fillRect(0, 0, canvas.width, canvas.height);
     context.scale(renderScale, renderScale);
@@ -1585,16 +1625,13 @@ function Update(animationTime = 0)
     const seconds = songTime%60|0;
     songTimeDisplay.innerText = (songTime/60|0) +':' + (seconds>9?'':'0') + seconds;
 
-    // context.drawImage(tilesCanvas, 0, 0); // test render tiles
-
-    // puzzle mode stuff
-    RenderPuzzle();
-
     // watermark and fps
     const frameFPSTimeNew = performance.now();
     fps = fps*.9 + .1 * (1e3/(frameFPSTimeNew - frameFPSTime));
     frameFPSTime = frameFPSTimeNew;
     watermarkDisplay.innerText = (debug? (fps|0) + ' FPS ' : '') + programName + ' v' + programVersion
+
+    // context.drawImage(tilesCanvas, 0, 0); // test render tiles
 
     ///////////////////////////////////////////////////////////////////////////////
     // clean up frame
@@ -1611,41 +1648,80 @@ const C_Frequency = 261.6255653005986;
 const defaultInstruments = 
 [
     [2,0,C_Frequency,,1,,1,,,,,,.2,,,,.01,.5,.01,.2],  // lead
-    [,0,C_Frequency/4,,1,,,2,,,.5,,,,,.1,,.4,.05],     // bass
+    [,0,C_Frequency/2,,1,,,2,,,.5,,,,,.1,,.4,.05],     // bass
     [1.3,0,C_Frequency/4,,.02,,,1.5,,,,,,5,,,,.7,.02], // kick
     [.5,0,260,,,.04,,,,,,,.1,99,,,,2,.005,.2],         // hat
 ];
 
 function GetSaveString(saveCamera = 1)
 {
+    const cellsSave = IsPlaying() ? cellSavedObjects : cellObjects;
+
+    const cellsIDs = [], cellsData = [];
+    cellsSave.map((cell, i)=>
+    {
+        if (cell)
+        {
+            cellsIDs.push(i)
+            cellsData.push(...cell.GetInfoArray());
+        }
+    });
+
     return JSON.stringify(
     [
-        (IsPlaying() ? cellSavedObjects : cellObjects).map(c=>c&&c.GetInfoArray()),
         dataVersion,
+        songName,
         bpm,
         keyOffset,
-        cellsWidth,
-        cellsHeight,
-        songName,
-        instruments,
-        saveCamera ? renderScale : 0,
         renderOffsetX,
-        renderOffsetY
+        renderOffsetY,
+        saveCamera ? renderScale : 0,
+        saveInstruments ? instruments : 0,
+        cellsIDs,
+        cellsData,
+        cellsWidth,
+        cellsHeight
     ]);
 }
 
 function LoadSaveString(dataString)
 {
-    const data = JSON.parse(dataString, (key, value) => value === null ? undefined : value);
-    cellObjects = data.shift().map(c=>c && (new Cell(...c)));
-    const version = data.shift();
+    LoadSaveData(JSON.parse(dataString, (key, value) => value === null ? undefined : value));
+}
+
+function LoadSaveData(data)
+{
+    let version = data[0];
+
+    let renderOffsetXNew, renderOffsetYNew, renderScaleNew, cellData, cellIDs;
+    if (version != dataVersion)
+    {
+        /*const oldVersion = data.shift();
+        if (oldVersion > 0 && oldVersion < 4)
+        {
+            cellData = version;
+            [bpm, keyOffset, cellsWidth, cellsHeight, songName, instruments, renderScaleNew, renderOffsetXNew, renderOffsetYNew] = data;
+        }
+        else*/
+        {
+            alert(errorMessage);
+            ClearLevel()
+            return;
+        }
+    }
 
     // convert old powerlines to multi directional
-    version <= 2 && cellObjects.map(cell=>cell && cell.type == CELL_TYPE_POWER_LINE && (cell.data = 4));
+    //version <= 2 && cellObjects.map(cell=>cell && cell.type == CELL_TYPE_POWER_LINE && (cell.data = 4));
     
-    let renderOffsetXNew, renderOffsetYNew, renderScaleNew;
-    [bpm, keyOffset, cellsWidth, cellsHeight, songName, instruments, renderScaleNew, renderOffsetXNew, renderOffsetYNew] = data;
+    let cellsData = [];
+    let cellsIDs = [];
 
+    [version, songName, bpm, keyOffset, renderOffsetXNew, renderOffsetYNew, renderScaleNew, instruments, cellsIDs, cellData, cellsWidth, cellsHeight] = data;
+
+    cellObjects = [];
+    
+    let j = 0;
+    cellsIDs.map(i=> cellObjects[i] = new Cell(cellData[j++], cellData[j++], cellData[j++], cellData[j++]));
     instruments || (instruments = defaultInstruments);
     
     if (renderScaleNew)
@@ -1669,11 +1745,9 @@ function SaveInternal()
 {
     localStorage[programName + 'Save'] = JSON.stringify([
         dataGlobalVersion,
-        puzzleMode,
-        volume,
-        puzzleSaveData,
+        volume
     ]);
-    localStorage[programName + 'SavePuzzle' + puzzleMode] = GetSaveString();
+    localStorage[programName + 'SaveLevel'] = GetSaveString();
 }
 
 function Load() // only happens on startup
@@ -1684,12 +1758,13 @@ function Load() // only happens on startup
         const saveObject = JSON.parse(localStorage[programName + 'Save']);
         if (saveObject[0] == dataGlobalVersion)
         {
-            puzzleMode = saveObject[1];
-            volume = saveObject[2];
-            puzzleSaveData = saveObject[3];
+            volume = saveObject[1];
         }
     }
-    catch(e) {}
+    catch(e) 
+    {
+        // load demo
+    }
     
     const url = new URL(window.location.href);
     try
@@ -1697,27 +1772,19 @@ function Load() // only happens on startup
         // try to load crushed url
         const crushedString = url.searchParams.get('c');
         LoadSaveString(JSONUncrush(crushedString));
-
-        // set to free edit mode
-        puzzleMode = 0;
+        InitLevel();
     }
     catch(e)
     {
         try
         {
-            // try to load local storage
-            const dataString = localStorage[programName + 'SavePuzzle' + puzzleMode];
-            LoadSaveString(dataString);
+            LoadSaveString(localStorage[programName + 'SaveLevel']);
+            InitLevel();
         }
-        catch(e) 
-        {
-            // could not load saved puzzle, exit puzzle mode
-            puzzleMode = 0;
+        catch (e) { 
+            LoadLevel(0);
         }
     }
-
-    InitLevel();
-    Save();
 
     // get rid of search in url
     url.search = '';
@@ -1767,7 +1834,6 @@ function SetPlayMode(playModeNew = 0)
         else
             cellSavedObjects = cellObjects.map(c=>c && (new Cell(...c.GetInfoArray())));
 
-        Clear();
         cellObjects = cellSavedObjects.map(c=>c && (new Cell(...c.GetInfoArray())));
         InitCells();
     }
@@ -1905,7 +1971,7 @@ function BuildHTML()
     watermarkDisplay = CreateElement('div', body, 'watermark');
 
     // top toolbar
-    inputSongName = CreateElement('input', toolbarTop, '', 'font-size:40;height:50;width:530');
+    inputSongName = CreateElement('input', toolbarTop, '', 'font-size:30;height:50;width:530');
     inputSongName.placeholder = 'Song Name';
     inputSongName.onchange = e=> Save(UpdateUI(songName = e.target.value));
 
@@ -1928,10 +1994,10 @@ function BuildHTML()
     {
         e = CreateElement('div', instrumentsToolbar, `instrumentButton${i} menuButton`, 'width:30', i+1);
         e.title = `Instrument ${i+1} Paremeters`;
-        e.onclick =e=>
+        e.onmousedown =e=>
         {
             zzfx(...instruments[i]);
-            let code = prompt(`Instrument ${i+1} ZzFX Code`, `zzfx(...${JSONStringifyNoNull(instruments[i])})`);
+            let code = prompt(`🎹 Instrument ${i+1} ZzFX Code`, `zzfx(...${JSONStringifyNoNull(instruments[i])})`);
             if (!code)
                 return;
 
@@ -1947,7 +2013,6 @@ function BuildHTML()
             zzfx(...instruments[i]);
             alert('Instrument Loaded!');
         }
-        e.onmousedown = e => false;
         i-1 || CreateElement('br', instrumentsToolbar);
     }
 
@@ -1956,15 +2021,14 @@ function BuildHTML()
     [
         ['Save',   ButtonSave],
         ['Load',   ButtonLoad],
-        ['Clear',  ButtonClear],
+        ['New',  ButtonClear],
         ['Share',  ButtonShare],
         ['Export', ButtonExport],
-        ['Menu',   ButtonMenu],
+        ['Demos',   ButtonMenu],
     ]
     .map((button,i)=>{
         e = CreateElement('div', buttonsToolbar, 'menuButton', '', button[0]);
-        e.onclick = button[1];
-        e.onmousedown = e => false;
+        e.onmousedown = button[1];
         i-2 || CreateElement('br', buttonsToolbar);
     });
 
@@ -1997,21 +2061,21 @@ function BuildHTML()
     // load message
     loadingMessageDisplay = CreateElement('div', body, 'loadingMessage');
 
-    // puzzle canvas
-    puzzleCanvas = CreateElement('canvas', toolbar, 'puzzle');
-
     // menu
-    menu = CreateElement('div', toolbar, 'menu', '', 'TEST LEVELS');
+    menu = CreateElement('div', toolbar, 'menu');
 
-    for(let i = 0; i <20; ++i)
-        e = CreateElement('div', menu, 'level', '', 'level' + i);
+    levelData.map((level, i)=>
+    {
+        e = CreateElement('div', menu, 'level', '', level[1]);
+        e.onmousedown = e=>LoadLevel(i);
+    });
 
     cellObjects = [];
     UpdateUI();
-    SetEditObject(1, 0);
+    SetEditObject(CELL_TYPE_NOTE, 0);
     SetPlayMode();
-    renderOffsetY = 150;
-    renderOffsetX = 50;
+
+    context = canvas.getContext('2d');
 }
 
 function GetCellTypeDescription(type, data)
@@ -2043,8 +2107,12 @@ function GetCellTypeDescription(type, data)
 ///////////////////////////////////////////////////////////////////////////////
 // UI Buttons
 
+function RemoveFocus() { document.activeElement && document.activeElement.blur(); }
+
 function ButtonSave()
 {
+    RemoveFocus();
+    UpdateUI();
     downloadLink.href = URL.createObjectURL(new Blob([GetSaveString()]));
     downloadLink.download = (songName || 'Song') + extension;
     downloadLink.click();
@@ -2064,9 +2132,11 @@ function LoadFile(file)
         catch(e) 
         {
             alert(errorMessage);
-            SetPlayMode();
-            Clear();
-            UpdateUI();
+            
+            cellsWidth = defaultCellsWidth;
+            cellsHeight = defaultCellsHeight;
+            
+            ClearLevel();
         }
         Save();
         inputFile.value = ''; // reset input so same file can be reloaded
@@ -2086,22 +2156,21 @@ function ButtonLoad()
 {
     inputFile.onchange=e=>LoadFile(e.target.files[0]);
     inputFile.click();
-}
+} 
 
 function ButtonClear()
 {
-    if (!confirm('Are you sure?'))
+    SetPlayMode();
+    let levelSize = prompt('📐 Level Size?', 101);
+
+    if (!levelSize)
         return;
 
-    cellsWidth = defaultCellsWidth;
-    cellsHeight = defaultCellsHeight;
-    bpm = defaultBPM;
-    keyOffset = 0;
-    songName = '';
-    SetPlayMode();
-    Clear();
-    UpdateUI();
-    Save();
+    levelSize = Clamp(levelSize|0, 1000, 25);
+    cellsWidth = levelSize;
+    cellsHeight = levelSize;
+
+    ClearLevel();
 }
 
 function ButtonShare()
@@ -2109,13 +2178,13 @@ function ButtonShare()
     if (!wantsToShare) // prevent double clicking button
         return;
     loadingMessageDisplay.style.display = 'block';
-    loadingMessageDisplay.innerHTML = 'Compressing URL...';
+    loadingMessageDisplay.innerHTML = '🗜️ Compressing URL...';
     wantsToShare = 2;
 }
 
 function ButtonExport()
 {
-    let beatCount = prompt("Export Beat Count?", bpm);
+    let beatCount = prompt("🥁 Export How many beats?", bpm);
     beatCount = Clamp(beatCount, bpm*10);
     if (!beatCount)
         return;
@@ -2125,7 +2194,7 @@ function ButtonExport()
 
 function ButtonMenu()
 {
-    //menu.style.display = menu.style.display ? '' : 'block';
+    menu.style.display = menu.style.display ? '' : 'block';
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2279,89 +2348,6 @@ function FillCircle(x, y, r, fillStyle, lineWidth = 0, strokeStyle = '#fff')
         context.stroke();
     }
     context.restore();
-}
-
-let puzzleMusic = 0;//[[[2,0,261.6255653005986,,1,,1,,,,,,0.2,,,,0.01,0.5,0.01,0.2],[,0,130.8127826502993,,1,,,2,,,0.5,,,,,0.1,,0.4,0.05],[1.3,0,65.40639132514966,,0.02,,,1.5,,,,,,5,,,,0.7,0.02],[0.5,0,260,,,0.04,,,,,,,0.1,99,,,,2,0.005,0.2]],[[[0,0,28,28,-1,28,-1,24,28,-1,31,0,0,-1,19,0,0,0,24,0,-1,19,0,-1,16,0,-1,21,-1,23,-1,22,21,-1,16,28,31,-1,33,-1,29,31,-1,28,-1,24,26,23,0,-1,24,0,-1,19,0,-1,16,0,-1,21,-1,23,-1,22,21,-1,16,28,31,-1,33,-1,29,31,-1,28,-1,24,26,23,0,-1,,,,,,,,,,,,,,,,,,,,,],[1,0,26,26,-1,26,-1,26,26,-1,31,0,0,-1,19,0,0,0,19,0,-1,16,0,-1,12,0,-1,17,-1,19,-1,18,17,-1,16,24,28,-1,29,-1,26,28,-1,24,-1,21,23,19,0,-1,19,0,-1,16,0,-1,12,0,-1,17,-1,19,-1,18,17,-1,16,24,28,-1,29,-1,26,28,-1,24,-1,21,23,19,0,-1,,,,,,,,,,,,,,,,,,,,,],[2,0,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,,,,,12,-1,,,],[3,0,,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12,-1,12,12,-1,,12.5,12.5,12,-1,12,12.5,-1,,12.5,12.5,12]]],[0],100];
-
-function RenderPuzzle()
-{
-    if (!puzzleMusic)
-    {
-        puzzleCanvas.style.display = '';
-        return;
-    }
-
-    puzzleCanvas.style.display = 'block';
-
-    const renderCellWidth = 64;
-    const renderCellHeight = 16;
-    const patterns = puzzleMusic[1][0];
-
-    const context = puzzleCanvas.getContext('2d');
-    puzzleCanvas.width = 960;
-    puzzleCanvas.height = renderCellHeight*patterns.length;
-    context.fillStyle = '#fff';
-    context.textAlign = 'center';
-    context.textBaseline = 'middle';
-
-    const frameRenderLookBehind = 20;
-    const frameLookBehind = 6;
-    const frameLookAhead = 9;
-
-    // get list of patterns for sequence 0
-    patterns.map((pattern,i)=>
-    {
-        const startFrame = Clamp(frame-frameRenderLookBehind-1, pattern.length-2);
-        const endFrame = Clamp(frame+frameLookAhead, pattern.length-2);
-        const renderOffset = (Math.max(1,frame+stepPercent)-frameLookBehind-1)*renderCellWidth;
-        
-        const instrument = pattern[0];
-        let lastAttenuation = -1;
-        for(let j=startFrame; j<endFrame; ++j)
-        {
-            const value = pattern[j+2];
-            let key = value-12|0;
-            if (value < 0 || !value && lastAttenuation < 0)
-            {
-                lastAttenuation = -1;
-                continue;
-            }
-
-            const attenuation = (value%1 < .99 ? value % 1 : 1)*10 | 0;
-            const type = CELL_TYPE_NOTE;
-            const set = 0;
-            const x = j*renderCellWidth-renderOffset|0;
-            const y = i*renderCellHeight|0;
-            const noteName = NoteName(key);
-            const attenuationName = AttenuationName(attenuation);
-
-            context.fillStyle = HSLA(instrument/4, .7, .4);
-            context.fillRect(x, y, renderCellWidth, renderCellHeight-2);
-            context.fillStyle = '#fff';
-            if (j > frame - frameLookBehind-2)
-            { 
-                if (value|0)
-                {
-                    context.clearRect(x, y, 4, renderCellHeight);
-
-                    // new note
-                    const displayString = noteName + (attenuation ? ' ' + attenuationName : '')
-                    context.fillText(displayString, x+renderCellWidth/2, y+renderCellHeight/2, renderCellWidth-4);
-                }
-                else if (attenuation != lastAttenuation)
-                {
-                    // change in volume
-                    const attenuationName = AttenuationName(attenuation);
-                    context.fillText(attenuationName, x+renderCellWidth/2, y+renderCellHeight/2, renderCellWidth-4);
-                }
-            }
-            lastAttenuation = attenuation;
-        }
-    });
-
-    context.lineWidth = 4;
-    context.strokeStyle = '#fff';
-    context.strokeRect(renderCellWidth*frameLookBehind+2, 0, renderCellWidth, renderCellHeight*instrumentCount);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2566,11 +2552,11 @@ e=(0<e?1:-1)*Math.abs(e)**D*(g?1-A+A*Math.sin(2*Math.PI*a/g):1)*C*zzfxV*(a<d?a/d
 
 const programIcon = '🎵🔨';
 const programName = 'NoteCraft';
-const programSubName = 'Music Cellular Automata';
-const programVersion = '.12';
+const programSubName = 'Musical Cellular Automata';
+const programVersion = '1.0';
 const errorMessage = '👾 I am Error.';
-const dataVersion = 3;
-const dataGlobalVersion = 1;
+const dataVersion = 5;
+const dataGlobalVersion = 2;
 const maxUndos = 99;
 const defaultBPM = 100;
 const defaultCellsWidth = 57, defaultCellsHeight = 57;
@@ -2593,7 +2579,7 @@ let deltaTime = 0;
 let auditionMode, frameSoundCount;
 let soundCache;
 let keysDown = [], keysPressed = [];
-let canvas, tilesCanvas, context, puzzleCanvas, menu;
+let canvas, tilesCanvas, context, menu;
 let stepPercent;
 let inputBPM, inputVolume, iconVolume, inputKey, inputSongName;
 let downloadLink, inputFile, rotateIcons = [];
@@ -2609,7 +2595,6 @@ let hasFocus = 0;
 let screenMinX, screenMinY, screenMaxX, screenMaxY;
 let unpowerSet;
 let canvasHasMouse;
-let puzzleMode, puzzleSaveData = [];
 let wantsToShare = 0;
 let loadingMessageDisplay;
 
@@ -2623,7 +2608,6 @@ let volume = .5;
 let volumeGain;
 
 BuildHTML();
-context = canvas.getContext('2d');
 
 ///////////////////////////////////////////////////////////////////////////////
 // Input
@@ -2657,7 +2641,6 @@ onkeydown = e=>
 
 onkeyup = e=> keysDown[e.keyCode] = 0;
 
-Clear();
 Load();
 Update();
 
