@@ -2,19 +2,31 @@
 
 # [Live Demo](https://killedbyapixel.github.io/NoteCraft/)
 
-How to Use
-- Note blocks make a sound when powered
-- Use control blocks to change the key and attenuation
-- Use power blocks to play notes
-- Other blocks do stuff, try them out!
-- More to come, this is a work in progress
+NoteCraft is a Cellular Automata Music System
+
+Features
+- Program music with cellular automata
+- Export to ZzFXM
+- Share a compressed link to your song
+- Several example songs
 
 Controls
-- Draw = Left Click
-- Erase = Control + Left Clic or Left+Right Click
-- Preview Sound = Right Click
+- Draw = Left Mouse
+- Erase = Control + Left Mouse or Left + Right Mouse
+- Test Cells / Eyedropper = Right Mouse
 - Move View = Click & Drag Middle Mouse
-- Select Area = Shift + Click & Drag
+- Zoom View = Wheel
+- Select Area = Shift + Left Mouse
+
+Cell Types
+- Power/Mover - Provides power to any touching cell and moves in a direction.
+- Power Line - Transfers power in a direction.
+- Rotator - Rotates cells and redirects movement when powered.
+- Copier - Copies the cell oposite the direction specified to the direction when powered.
+- Push Blocks - Can be pushed or not pushed.
+- Stop Block - Destroys anything pushed into it when powered.
+- Note - Plays a note when powered and holds until unpowered.
+- Note Control - Changes the key or attenuation of conneted notes.
 
 Shortcuts
 - Cut = Control + X
@@ -38,3 +50,7 @@ Play Controls
 - 2 = Pause
 - 3 = Step
 - 4 = Fast Forward
+
+Advanced Features
+- You can drag and drop files instead of clicking the load button
+- Instruments are fully customizable
