@@ -3,6 +3,10 @@
 🎵🔨 NoteCraft by Frank Force
 https://github.com/KilledByAPixel/NoteCraft
 
+todo
+- smaler save format, group by type
+- save i instead of x/y
+
 -->
 <meta charset=utf-8>
 <style>
@@ -111,7 +115,7 @@ input
     bottom:8;
     right:8;
     font-size:16;
-    color:#fff7;
+    color:#fff5;
     pointer-events:none;
 }
 .loadingMessage
@@ -149,8 +153,8 @@ input
     background:#2c2;
 }
 </style><body>
-<script src=JSONCrush.js?1></script>
-<script src=levelData.js?1></script>
+<script src=JSONCrush.js?2></script>
+<script src=levelData.js?2></script>
 <script>
 
 'use strict'
@@ -1567,14 +1571,10 @@ function GetSaveString(saveCamera = 1)
 {
     const cellsSave = IsPlaying() ? cellSavedObjects : cellObjects;
 
-    const cellsIDs = [], cellsData = [];
+    const cellsData = [];
     cellsSave.map((cell, i)=>
     {
-        if (cell)
-        {
-            cellsIDs.push(i)
-            cellsData.push(...cell.GetInfoArray());
-        }
+        cell && cellsData.push(...cell.GetInfoArray());
     });
 
     return JSON.stringify(
@@ -1587,7 +1587,7 @@ function GetSaveString(saveCamera = 1)
         renderOffsetY|0,
         saveCamera ? renderScale*1e3|0 : 0,
         saveInstruments ? instruments : 0,
-        cellsIDs,
+        0, // not used, old cell ids
         cellsData,
         cellsWidth,
         cellsHeight
@@ -1631,8 +1631,8 @@ function LoadSaveData(data)
 
     cellObjects = [];
     
-    let j = 0;
-    cellsIDs.map(i=> cellObjects[i] = new Cell(cellData[j++], cellData[j++], cellData[j++], cellData[j++]));
+    for(let j = 0; j < cellData.length;)
+        SetCell(cellData[j++], cellData[j++], cellData[j++], cellData[j++]);
     instruments || (instruments = defaultInstruments);
     
     if (renderScaleNew)
@@ -1948,8 +1948,8 @@ function BuildHTML()
     const beatDisplayWrapper = CreateElement('div', toolbarEditControls);
     beatDisplay = CreateElement('div', beatDisplayWrapper, 'beatDisplay');
     beatDisplay.onmousedown=e=>ToggleEdit();
-    beatDisplay.title = 'Toggle Play [Space]'
     beatDisplaySpinner = CreateElement('div', beatDisplay, 'beatDisplaySpinner');
+    beatDisplaySpinner.title = 'Toggle Play [Space]'
     e = CreateElement('div', beatDisplaySpinner, 'beatDisplayMarker');
     songTimeDisplay = CreateElement('div', beatDisplayWrapper, 'songTimeDisplay');
 
