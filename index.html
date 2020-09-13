@@ -1517,7 +1517,9 @@ function Update(animationTime = 0)
         //url.searchParams.append('c', crushed);
         url.search = '&c=' + crushed;
         
-        try { navigator['clipboard']['writeText'](url.toString()); alert('👍 Link coppied!') }
+        try { 
+            navigator['clipboard']['writeText'](url.toString()); alert('👍 Link coppied!') 
+        }
         catch (e) { alert(errorMessage); }
     }
 
@@ -2022,16 +2024,17 @@ function BuildHTML()
     // buttons
     const buttonsToolbar = CreateElement('div', toolbarTop, '', '');
     [
-        ['Save',   ButtonSave],
-        ['Load',   ButtonLoad],
-        ['New',  ButtonClear],
-        ['Share',  ButtonShare],
-        ['Export', ButtonExport],
-        ['Demos',   ButtonMenu],
+        ['Save',    ButtonSave,     'Save to disk'],
+        ['Load',    ButtonLoad,     'Load from disk (you can also drag and drop)'],
+        ['New',     ButtonClear,    'Start a new song'],
+        ['Share',   ButtonShare,    'Share a compressed link'],
+        ['Export',  ButtonExport,   'Export to ZzFXM and OS13k'],
+        ['Demos',   ButtonMenu,     'Load a demo'],
     ]
     .map((button,i)=>{
         e = CreateElement('div', buttonsToolbar, 'menuButton', '', button[0]);
         e.onmousedown = button[1];
+        e.title = button[2];
         i-2 || CreateElement('br', buttonsToolbar);
     });
 
@@ -2499,6 +2502,10 @@ function Export(beatCount)
     downloadLink.href = URL.createObjectURL(new Blob([zzfxmString]));
     downloadLink.download = (songName || 'Song') + '.txt';
     downloadLink.click();
+
+    // share to zzfx
+    localStorage['OS13kMusic,NoteCraft - '+songName] = zzfxmString;
+    localStorage['OS13kTrophy,🎵🔨,NoteCraft,Exporter'] = 'Exported to OS13k';
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2556,7 +2563,7 @@ e=(0<e?1:-1)*Math.abs(e)**D*(g?1-A+A*Math.sin(2*Math.PI*a/g):1)*C*zzfxV*(a<d?a/d
 const programIcon = '🎵🔨';
 const programName = 'NoteCraft';
 const programSubName = 'Musical Cellular Automata';
-const programVersion = '1.01';
+const programVersion = '1.03';
 const errorMessage = '👾 I am Error.';
 const dataVersion = 6;
 const dataGlobalVersion = 2;
