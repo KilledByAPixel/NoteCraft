@@ -8,7 +8,9 @@ Features
 - Program music with cellular automata
 - Export to ZzFXM
 - Share a compressed link to your song
+- Turing Complete
 - Several example songs
+- Instruments are fully customizable
 
 Controls
 - Draw = Left Mouse
@@ -50,7 +52,3 @@ Play Controls
 - 2 = Pause
 - 3 = Step
 - 4 = Fast Forward
-
-Advanced Features
-- You can drag and drop files instead of clicking the load button
-- Instruments are fully customizable
