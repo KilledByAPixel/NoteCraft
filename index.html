@@ -103,6 +103,7 @@ input
     position: relative;
     left:22;
     top:4;
+    pointer-events:none;
 }
 .beatDisplaySpinner
 {
@@ -153,8 +154,8 @@ input
     background:#2c2;
 }
 </style><body>
-<script src=JSONCrush.js?3></script>
-<script src=levelData.js?3></script>
+<script src=JSONCrush.js?4></script>
+<script src=levelData.js?4></script>
 <script>
 
 'use strict'
@@ -958,7 +959,7 @@ class Cell
 function ClearLevel()
 {
     cellObjects = [];
-    instruments = defaultInstruments;
+    //instruments = [...defaultInstruments];
     bpm = defaultBPM;
     keyOffset = 0;
     songName = '';
@@ -1428,9 +1429,9 @@ function Update(animationTime = 0)
         url.search = '&c=' + crushed;
         
         try { 
-            navigator['clipboard']['writeText'](url.toString()); alert('👍 Link coppied!') 
+            navigator['clipboard']['writeText'](url.toString()); alert('👍 Link copied!') 
         }
-        catch (e) { alert(errorMessage); }
+        catch (e) { ShowError(); }
     }
 
     if (!hasFocus && document.hasFocus())
@@ -1615,7 +1616,7 @@ function LoadSaveData(data)
         }
         else*/
         {
-            alert(errorMessage);
+            ShowError();
             ClearLevel()
             return;
         }
@@ -1633,7 +1634,7 @@ function LoadSaveData(data)
     
     for(let j = 0; j < cellData.length;)
         SetCell(cellData[j++], cellData[j++], cellData[j++], cellData[j++]);
-    instruments || (instruments = defaultInstruments);
+    instruments || (instruments = [...defaultInstruments]);
     
     if (renderScaleNew)
     {
@@ -1806,7 +1807,7 @@ function UpdateUI()
     inputBPM.value = bpm = Clamp(bpm|0, inputBPM.max = 360, inputBPM.min = 30);
     inputKey.value = keyOffset = Clamp(keyOffset|0, inputKey.max = 60, inputKey.min = 0);
     inputVolume.value = volume*100;
-    iconVolume.innerHTML = volume > .5 ? '🔊' : volume > .1 ? '🔉' : volume ? '🔈' : '🔇'
+    iconVolume.innerHTML = volume > .7 ? '🔊' : volume > .2 ? '🔉' : volume ? '🔈' : '🔇'
     document.title = programIcon + ' ' + programName + ' - ' + (songName ? songName : programSubName);
 
     if (volumeGain)
@@ -1890,12 +1891,14 @@ function BuildHTML()
 
     e = CreateElement('span', toolbarSettings, '', '', 'BPM');
     inputBPM = e = CreateElement('input', toolbarSettings, '', '');
+    inputBPM.title = 'Beats Per Minute - How fast the song is';
     e.onchange = e=> Save(UpdateUI(bpm = e.target.value));
     e.type = 'number';
 
     CreateElement('br', toolbarSettings);
     e = CreateElement('span', toolbarSettings, '', '', 'Key');
     inputKey = e = CreateElement('input', toolbarSettings, '', '');
+    inputKey.title = 'Transpose song key';
     e.onchange = e=> Save(UpdateUI(keyOffset = e.target.value));
     e.type = 'number';
 
@@ -1915,7 +1918,7 @@ function BuildHTML()
             code = code.split('[')[1];
             if (!code)
             {
-                alert(errorMessage);
+                ShowError();
                 return;
             }
 
@@ -1930,7 +1933,7 @@ function BuildHTML()
     // buttons
     const buttonsToolbar = CreateElement('div', toolbarTop, '', '');
     [
-        ['Save',    ButtonSave,     'Save to disk'],
+        ['Save',    ButtonSave,     'Save to disk (current song is auto saved)'],
         ['Load',    ButtonLoad,     'Load from disk (you can also drag and drop)'],
         ['New',     ButtonClear,    'Start a new song'],
         ['Share',   ButtonShare,    'Share a compressed link'],
@@ -2035,21 +2038,21 @@ function LoadFile(file)
     const reader = new FileReader();
     reader.onload = e=>
     {
+        SetPlayMode();
+        const oldSaveString = GetSaveString();
+
         try
         {
-            SetPlayMode();
             LoadSaveString(e.target.result);
-            InitLevel();
         }
         catch(e) 
         {
-            alert(errorMessage);
+            ShowError();
             
-            cellsWidth = defaultCellsWidth;
-            cellsHeight = defaultCellsHeight;
-            
-            ClearLevel();
+            // reload orginal level
+            LoadSaveString(oldSaveString);
         }
+        InitLevel();
         Save();
         inputFile.value = ''; // reset input so same file can be reloaded
     }
@@ -2107,6 +2110,12 @@ function ButtonExport()
 function ButtonMenu()
 {
     menu.style.display = menu.style.display ? '' : 'block';
+}
+
+function ShowError()
+{
+    alert('👾 I am Error.');
+    localStorage['OS13kTrophy,👾,NoteCraft,Found Bagu'] = 'Caused an error';
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2469,8 +2478,7 @@ e=(0<e?1:-1)*Math.abs(e)**D*(g?1-A+A*Math.sin(2*Math.PI*a/g):1)*C*zzfxV*(a<d?a/d
 const programIcon = '🎵🔨';
 const programName = 'NoteCraft';
 const programSubName = 'Musical Cellular Automata';
-const programVersion = '1.03';
-const errorMessage = '👾 I am Error.';
+const programVersion = '1.05';
 const dataVersion = 6;
 const dataGlobalVersion = 2;
 const maxUndos = 99;
